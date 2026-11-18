@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js?v=20261118-arrears-ledger1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, refreshPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js?v=20261118-arrears-ledger1";
 import { renderPaymentPage } from "./payments.js?v=20261118-4";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -271,7 +271,8 @@ async function renderDashboard(c){
     runButton.disabled=true;runButton.textContent="Membuat tagihan…";
     try{
       const result=await createMonthlyBills(monthKey(),currentUser?.uid);
-      toast(`Tagihan ${result.period} berhasil dibuat untuk ${result.householdCount} rumah.`);
+      await refreshPublicSnapshot(result.period,households);
+      toast(`Tagihan ${result.period} berhasil dibuat untuk ${result.householdCount} rumah. Daftar tunggakan publik ikut diperbarui.`);
       await render();
     }catch(err){
       toast("Tagihan tidak dibuat: "+err.message);
@@ -402,7 +403,8 @@ async function renderWaterMeters(c){
     try{
       const result=await importWaterStatement({period,rows:parsedImportRows,recordedBy:currentUser?.uid});
       households=await getHouseholds();householdsLoadedAt=Date.now();
-      toast(`Impor selesai: ${result.created} rumah baru, ${result.matched} rumah cocok, ${result.charges} tagihan air.`);
+      await refreshPublicSnapshot(period,households);
+      toast(`Impor selesai: ${result.created} rumah baru, ${result.matched} rumah cocok, ${result.charges} tagihan air. Daftar publik diperbarui.`);
       await render();
     }catch(err){toast("Impor gagal: "+err.message);button.disabled=false;button.textContent="Impor ke Firebase";}
   });
@@ -411,7 +413,7 @@ async function renderWaterMeters(c){
     const button=row.querySelector(".meter-save"),wasSaved=input.disabled,previous=Number(input.min||row.dataset.previous),rate=Number(row.dataset.rate),admin=Number(row.dataset.admin);
     const preview=()=>{const current=Number(input.value),valid=input.value!==""&&Number.isFinite(current)&&current>=previous,usage=valid?current-previous:0;row.querySelector(".meter-preview").textContent=valid?"Pemakaian "+usage.toLocaleString("id-ID")+" m³ · Tagihan "+money(admin+Math.round(usage*rate)):input.value&&current<previous?"Angka tidak boleh lebih kecil dari meter awal":"Isi angka meter akhir";button.disabled=!valid;input.setCustomValidity(input.value!==""&&current<previous?"Meter akhir tidak boleh lebih kecil dari meter awal.":"");};
     input.addEventListener("input",preview);
-    button.addEventListener("click",async()=>{if(button.hasAttribute("data-edit-mode")&&input.disabled){input.disabled=false;button.textContent="Simpan koreksi";input.focus();preview();return;}if(!input.reportValidity())return;button.disabled=true;button.textContent="…";try{const payload={period,householdId:row.dataset.house,currentMeter:input.value,recordedBy:currentUser?.uid};const result=wasSaved?await editWaterReading(payload):await saveWaterReading(payload);toast("Meter "+result.usage+" m³ tersimpan. Tagihan "+money(result.totalAmount));await render();}catch(err){toast("Gagal menyimpan meter: "+err.message);button.disabled=false;button.textContent=wasSaved?"Simpan koreksi":"Simpan";}});
+    button.addEventListener("click",async()=>{if(button.hasAttribute("data-edit-mode")&&input.disabled){input.disabled=false;button.textContent="Simpan koreksi";input.focus();preview();return;}if(!input.reportValidity())return;button.disabled=true;button.textContent="…";try{const payload={period,householdId:row.dataset.house,currentMeter:input.value,recordedBy:currentUser?.uid};const result=wasSaved?await editWaterReading(payload):await saveWaterReading(payload);households=await getHouseholds();householdsLoadedAt=Date.now();await refreshPublicSnapshot(period,households);toast("Meter "+result.usage+" m³ tersimpan. Tagihan "+money(result.totalAmount)+" · daftar tunggakan diperbarui.");await render();}catch(err){toast("Gagal menyimpan meter: "+err.message);button.disabled=false;button.textContent=wasSaved?"Simpan koreksi":"Simpan";}});
   });
 }
 async function renderCategory(c,cat){
