@@ -1,6 +1,6 @@
 import { ref, push, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod } from "./data.js?v=20261118-arrears-ledger1";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, refreshPublicSnapshot } from "./data.js?v=20261118-arrears-ledger1";
 
 const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
@@ -146,7 +146,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               if(Object.prototype.hasOwnProperty.call(updates,path)) await setHouseholdArrearPeriod(id,row.period,cat,updates[path]);
             }
           }
-          toast("Pembayaran tersimpan. Deposit dan sisa tagihan diperbarui.");
+          await refreshPublicSnapshot(paymentPeriod);
+          toast("Pembayaran tersimpan. Deposit dan sisa tagihan publik diperbarui.");
           await select.dispatchEvent(new Event("change"));
         }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
         finally{button.disabled=false;button.textContent="Simpan pembayaran";}
