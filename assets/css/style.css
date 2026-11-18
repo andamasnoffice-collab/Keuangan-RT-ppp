@@ -490,3 +490,9 @@ td{color:var(--text)}
 :root[data-theme="dark"] .water-meter-line{border-color:var(--line)}
 :root[data-theme="dark"] .house-ledger-table .ledger-total td{background:var(--surface-soft)}
 :root[data-theme="dark"] .toast{background:#203b53;color:#fff}
+
+.ledger-cash,.ledger-deposit{font-size:11px;line-height:1.45;white-space:nowrap}
+.ledger-cash b{color:var(--text)}
+.ledger-deposit{margin-top:3px;color:var(--green)}
+.ledger-deposit b{font-weight:750}
+@media(max-width:760px){.house-ledger-table{min-width:760px}.ledger-cash,.ledger-deposit{font-size:10px}}
