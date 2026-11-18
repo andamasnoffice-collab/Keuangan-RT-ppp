@@ -81,6 +81,10 @@
     "arrearsSummary": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "arrearsLedger": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
