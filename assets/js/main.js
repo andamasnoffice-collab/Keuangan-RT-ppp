@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions } from "./data.js";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions, importWaterStatement } from "./data.js";
 import { renderPaymentPage } from "./payments.js?v=20261118-3";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -316,6 +316,37 @@ async function renderDeposits(c){
   Object.entries(data).forEach(([hid,cats])=>Object.entries(cats||{}).forEach(([cat,amount])=>rows.push({hid,cat,amount})));
   c.innerHTML=`<div class="grid stats">${card("Deposit kas",money(rows.filter(x=>x.cat==="kas").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Deposit sampah",money(rows.filter(x=>x.cat==="sampah").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Deposit air",money(rows.filter(x=>x.cat==="air").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Total deposit",money(rows.reduce((s,x)=>s+Number(x.amount||0),0)),"Tidak termasuk saldo operasional")}</div><div class="section-head"><h3>Saldo deposit per rumah</h3></div><div class="table-wrap"><table><thead><tr><th>Rumah</th><th>Kategori</th><th>Saldo deposit</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${households[x.hid]?.block||x.hid}</td><td>${x.cat}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">Belum ada deposit.</td></tr>'}</tbody></table></div><div class="muted-note" style="margin-top:14px">Deposit tidak dapat dipindahkan antar-kategori. Perubahan deposit harus tercatat di deposit ledger dan melalui proses transaksi yang tervalidasi.</div>`;
 }
+
+async function ensureXLSX(){
+  if(window.XLSX)return window.XLSX;
+  await new Promise((resolve,reject)=>{
+    const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";s.onload=resolve;s.onerror=()=>reject(new Error("Pustaka pembaca Excel gagal dimuat. Periksa koneksi internet."));document.head.appendChild(s);
+  });
+  return window.XLSX;
+}
+function parseCsvText(text){
+  const rows=[];let row=[],cell="",quoted=false;
+  for(let i=0;i<text.length;i++){const ch=text[i],next=text[i+1];
+    if(ch==='"'&&quoted&&next==='"'){cell+='"';i++;}
+    else if(ch==='"')quoted=!quoted;
+    else if((ch===","||ch===";"||ch==="\\t")&&!quoted){row.push(cell);cell="";}
+    else if((ch==="\\n"||ch==="\\r")&&!quoted){if(ch==="\\r"&&next==="\\n")i++;row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);row=[];cell="";}
+    else cell+=ch;
+  }
+  row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);
+  return rows;
+}
+function normalizeWaterImportRows(matrix){
+  if(!matrix.length)return [];
+  const headers=matrix[0].map(v=>String(v??"").trim().toLowerCase());
+  const find=patterns=>headers.findIndex(h=>patterns.some(p=>h.includes(p)));
+  const ix={block:find(["blok","no. rumah"]),name:find(["nama kepala","nama"]),previous:find(["meter september","meteran september","meter awal"]),current:find(["meter oktober","meteran oktober","meter akhir"]),usage:find(["pemakaian","jml"]),amount:find(["tagihan oktober","tagihan air","nominal tagihan","tagihan (rp)"])};
+  if(ix.block<0)throw new Error("Kolom Blok tidak ditemukan. Gunakan file template impor Keuangan RT.");
+  return matrix.slice(1).filter(r=>String(r[ix.block]??"").trim()).map(r=>{
+    const num=i=>{if(i<0||r[i]===undefined||r[i]===null||String(r[i]).trim()==="")return null;const v=Number(String(r[i]).replace(/[^0-9,.-]/g,"").replace(/\\.(?=\\d{3}(?:\\D|$))/g,"").replace(",", "."));return Number.isFinite(v)?v:null;};
+    return {block:String(r[ix.block]).trim(),headName:ix.name>=0?String(r[ix.name]??"").trim():"",previousMeter:num(ix.previous),currentMeter:num(ix.current),usage:num(ix.usage),amount:num(ix.amount)};
+  });
+}
 async function renderWaterMeters(c){
   const period=monthKey(),settings=await getBillingSettings(),readings=await read(`water_readings/${period}`)||{},run=await read(`billing_runs/${period}`);
   const homes=Object.entries(households).filter(([,h])=>h&&h.status!=="empty"&&h.status!=="inactive").sort((a,b)=>String(a[1].block||"").localeCompare(String(b[1].block||"")));
@@ -323,6 +354,19 @@ async function renderWaterMeters(c){
   c.innerHTML=`<div class="grid stats">${card("Rumah aktif",homes.length,"Dihuni dan kontrak")}${card("Meter tercatat",recorded,"Periode "+period)}${card("Belum tercatat",homes.length-recorded,"Menunggu pencatatan meter")}</div>
   <div class="panel water-meter-panel">
     <div class="section-head" style="margin-top:0"><div><h3>Meteran air · ${period}</h3><p class="muted tiny">Masukkan angka akhir pada setiap rumah. Pemakaian dihitung otomatis.</p></div><span class="pill">${money(settings.waterPerM3||0)} / m³</span></div>
+    <div class="toolbar water-import-toolbar"><button class="btn outline" id="openWaterImport" type="button">⇧ Impor data Excel / CSV</button><span class="muted tiny">Impor daftar meter dan nominal tagihan per periode.</span></div>
+    <div id="waterImportPanel" class="muted-note hidden">
+      <form id="waterImportForm">
+        <div class="form-grid">
+          <label class="field">Periode data<input type="month" name="period" value="2026-10" required></label>
+          <label class="field">Pilih file Excel / CSV<input type="file" id="waterImportFile" accept=".xlsx,.xls,.csv" required></label>
+        </div>
+        <p class="muted tiny">Kolom yang dikenali: Blok, Nama Kepala Keluarga, Meter September, Meter Oktober, Pemakaian, dan Tagihan Oktober (Rp).</p>
+        <div id="waterImportPreview"></div>
+        <button class="btn primary" id="confirmWaterImport" type="submit" disabled>Impor ke Firebase</button>
+        <button class="btn outline" id="cancelWaterImport" type="button">Batal</button>
+      </form>
+    </div>
     ${!run||run.status!=="completed"?'<div class="muted-note">Tagihan bulan ini belum dibuat. Klik Buat Tagihan Bulan Ini di bagian atas Dashboard terlebih dahulu.</div>':homes.map(([id,h])=>{
       const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0,saved=readings[id];
       return `<div class="water-meter-line" data-house="${escapeHtml(id)}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
@@ -331,6 +375,36 @@ async function renderWaterMeters(c){
       </div>`;
     }).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}
   </div>`;
+  const importPanel=$("#waterImportPanel"),importForm=$("#waterImportForm");
+  let parsedImportRows=[];
+  $("#openWaterImport").addEventListener("click",()=>importPanel.classList.toggle("hidden"));
+  $("#cancelWaterImport").addEventListener("click",()=>{importPanel.classList.add("hidden");importForm.reset();parsedImportRows=[];$("#waterImportPreview").innerHTML="";$("#confirmWaterImport").disabled=true;});
+  $("#waterImportFile").addEventListener("change",async e=>{
+    const file=e.target.files?.[0];parsedImportRows=[];$("#confirmWaterImport").disabled=true;$("#waterImportPreview").textContent="Membaca file…";
+    if(!file)return;
+    try{
+      let matrix;
+      if(file.name.toLowerCase().endsWith(".csv"))matrix=parseCsvText(await file.text());
+      else {const XLSX=await ensureXLSX();const workbook=XLSX.read(await file.arrayBuffer(),{type:"array"});const sheet=workbook.Sheets[workbook.SheetNames[0]];matrix=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});}
+      parsedImportRows=normalizeWaterImportRows(matrix);
+      if(!parsedImportRows.length)throw new Error("Tidak ada baris data yang dapat dibaca.");
+      const missing=parsedImportRows.filter(x=>!x.headName||x.amount===null||x.previousMeter===null||x.currentMeter===null).length;
+      $("#waterImportPreview").innerHTML=`<div class="summary-box"><b>Pratinjau ${parsedImportRows.length} baris</b><p class="tiny muted">${missing} baris memiliki data kosong dan perlu diperiksa. Nominal dari file tidak dihitung ulang.</p><div class="table-wrap"><table><thead><tr><th>Blok</th><th>Nama</th><th>Meter awal</th><th>Meter akhir</th><th>Pemakaian</th><th>Tagihan</th></tr></thead><tbody>${parsedImportRows.slice(0,12).map(x=>`<tr><td>${escapeHtml(x.block)}</td><td>${escapeHtml(x.headName||"Belum dilengkapi")}</td><td>${x.previousMeter??"—"}</td><td>${x.currentMeter??"—"}</td><td>${x.usage??"—"}</td><td>${x.amount===null?"—":money(x.amount)}</td></tr>`).join("")}</tbody></table></div>${parsedImportRows.length>12?'<small class="muted tiny">Menampilkan 12 baris pertama dari seluruh data.</small>':""}</div>`;
+      $("#confirmWaterImport").disabled=false;
+    }catch(err){$("#waterImportPreview").textContent="Gagal membaca file: "+err.message;toast("Gagal membaca file impor.");}
+  });
+  importForm.addEventListener("submit",async e=>{
+    e.preventDefault();if(!parsedImportRows.length)return;
+    const period=new FormData(importForm).get("period");
+    if(!confirm(`Impor ${parsedImportRows.length} rumah/blok untuk periode ${period}? Proses ini hanya dapat dilakukan sekali per periode dan tidak menimpa tagihan air yang sudah ada.`))return;
+    const button=$("#confirmWaterImport");button.disabled=true;button.textContent="Mengimpor…";
+    try{
+      const result=await importWaterStatement({period,rows:parsedImportRows,recordedBy:currentUser?.uid});
+      households=await getHouseholds();householdsLoadedAt=Date.now();
+      toast(`Impor selesai: ${result.created} rumah baru, ${result.matched} rumah cocok, ${result.charges} tagihan air.`);
+      await render();
+    }catch(err){toast("Impor gagal: "+err.message);button.disabled=false;button.textContent="Impor ke Firebase";}
+  });
   c.querySelectorAll(".water-meter-line").forEach(row=>{
     const input=row.querySelector(".meter-current");if(!input)return;
     const previous=Number(row.dataset.previous),rate=Number(row.dataset.rate),admin=Number(row.dataset.admin);
