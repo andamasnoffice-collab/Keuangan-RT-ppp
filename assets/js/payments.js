@@ -93,7 +93,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         button.disabled=true;button.textContent="Menyimpan…";
         try{
           const updates={},timestamp=Date.now();
-          const paymentRef=push(ref(db,"payments"));
+          const paymentPeriod=String(date).slice(0,7);
+          const paymentRef=push(ref(db,`paymentsByMonth/${paymentPeriod}`));
           const transactionIds=[];
           let totalCash=0,totalApplied=0,totalDepositUsed=0,totalSurplus=0;
           for(const x of entries){
@@ -110,22 +111,20 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             updates[`deposits/${id}/${cat}`]=newDeposit;
             const ledgerRef=push(ref(db,"deposit_ledger"));
             updates[`deposit_ledger/${ledgerRef.key}`]={householdId:id,category:cat,amount:x.surplus-x.depositUsed,before:oldDeposit,after:newDeposit,type:x.surplus>0&&x.depositUsed>0?"deposit_adjustment":x.surplus>0?"deposit_in":x.depositUsed>0?"deposit_applied":"payment",date,createdAt:timestamp,paymentId:paymentRef.key};
-            const balanceRef=push(ref(db,"transactions"));
+            const balanceRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
             transactionIds.push(balanceRef.key);
             if(x.applied>0){
               const balancePath=`category_balances/${cat}`;
               const {read}=await import("./data.js");
               const balance=await read(balancePath)||{};
               updates[balancePath]={...balance,balance:num(balance.balance)+x.applied,income:num(balance.income)+x.applied,updatedAt:timestamp};
-              updates[`transactions/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:x.applied,householdId:id,referenceId:paymentRef.key,date,description:`Pembayaran ${labels[cat]}`,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-              updates[`transactionsByMonth/${String(date).slice(0,7)}/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:x.applied,householdId:id,referenceId:paymentRef.key,date,description:`Pembayaran ${labels[cat]}`,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+              updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:x.applied,householdId:id,referenceId:paymentRef.key,date,description:`Pembayaran ${labels[cat]}`,recordedBy:currentUser?.uid||null,createdAt:timestamp};
             }else{
-              updates[`transactions/${balanceRef.key}`]=null;
+              updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]=null;
             }
             totalCash+=x.cash;totalApplied+=x.applied;totalDepositUsed+=x.depositUsed;totalSurplus+=x.surplus;
           }
-          updates[`payments/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items:entries.map(x=>({...x})),cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-          updates[`paymentsByMonth/${String(date).slice(0,7)}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items:entries.map(x=>({...x})),cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items:entries.map(x=>({...x})),cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:monthKey,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           await update(ref(db),updates);
