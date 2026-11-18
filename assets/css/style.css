@@ -335,3 +335,19 @@ th{font-size:10px}
 .house-ledger-table td:not(:first-child),.house-ledger-table th:not(:first-child){text-align:right}
 .house-ledger-table .ledger-total td{background:#eef4f7;border-top:2px solid #dbe6ec}
 @media(max-width:600px){.house-actions{flex-direction:column}.house-ledger-filter{align-items:stretch}.house-ledger-filter .btn{align-self:end}}
+
+
+/* Mobile-only manager shortcuts on the logged-in dashboard */
+.mobile-quick-actions{display:none}
+@media(max-width:760px){
+ .mobile-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:13px 0 20px}
+ .quick-action{display:flex;align-items:center;gap:9px;min-width:0;text-align:left;padding:12px 10px;border:1px solid #dce7ee;border-radius:14px;background:#fff;box-shadow:0 3px 10px rgba(16,42,67,.045);color:var(--text)}
+ .quick-action-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:11px}
+ .quick-action-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+ .quick-pay .quick-action-icon{background:#e8f1ff;color:#2864a3}
+ .quick-water .quick-action-icon{background:#e3f6f2;color:#128477}
+ .quick-action b{display:block;font-size:12px;line-height:1.2}
+ .quick-action small{display:block;margin-top:4px;font-size:9px;line-height:1.25;color:var(--muted)}
+ .quick-arrow{margin-left:auto;font-size:21px;color:#8ba0ae}
+}
+@media(max-width:360px){.mobile-quick-actions{grid-template-columns:1fr}.quick-action{padding:10px 12px}}
