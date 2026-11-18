@@ -146,7 +146,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               if(Object.prototype.hasOwnProperty.call(updates,path)) await setHouseholdArrearPeriod(id,row.period,cat,updates[path]);
             }
           }
-          await refreshPublicSnapshot(paymentPeriod);
+          await refreshPublicSnapshot(monthKey());
           toast("Pembayaran tersimpan. Deposit dan sisa tagihan publik diperbarui.");
           await select.dispatchEvent(new Event("change"));
         }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
