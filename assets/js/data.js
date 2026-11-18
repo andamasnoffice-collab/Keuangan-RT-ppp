@@ -43,7 +43,8 @@ export async function migrateMonthlyIndexes(recordedBy) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
   const lock=root("settings/monthlyIndexMigration");
   const claim=await runTransaction(lock,current=>{
-    if(current?.status==="completed"||current?.status==="processing") return;
+    if(current?.status==="completed") return;
+    if(current?.status==="processing" && Date.now()-Number(current.startedAt||Date.now())<10*60*1000) return;
     return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null};
   },{applyLocally:false});
   if(!claim.committed) throw new Error("Migrasi indeks sudah selesai atau sedang dijalankan. Tidak perlu klik lagi.");
@@ -70,7 +71,7 @@ export async function migrateMonthlyIndexes(recordedBy) {
     add("transactionsByMonth",transactions);
     add("expensesByMonth",expenses);
     add("paymentsByMonth",payments);
-    await update(ref(db),updates);
+    if(Object.keys(updates).length) await update(ref(db),updates);
     const result={status:"completed",completedAt:Date.now(),recordedBy:recordedBy||null,counts:{transactions:Object.keys(transactions||{}).length,expenses:Object.keys(expenses||{}).length,payments:Object.keys(payments||{}).length}};
     await set(lock,result);
     return result;
