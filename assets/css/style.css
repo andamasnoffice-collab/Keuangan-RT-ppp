@@ -68,3 +68,23 @@
   .payment-summary .summary-line b{text-align:right}
   .payment-panel .field{margin:12px 0}
 }
+
+
+/* Live Firebase status in the top bar */
+.firebase-status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:11px;font-weight:700;white-space:nowrap}
+.firebase-status-dot{width:8px;height:8px;border-radius:50%;background:#9ca3af;box-shadow:0 0 0 3px rgba(156,163,175,.13);flex:0 0 auto}
+.firebase-status.is-online{color:#14734e;border-color:#b9e5d0;background:#f0fbf5}
+.firebase-status.is-online .firebase-status-dot{background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.14)}
+.firebase-status.is-offline,.firebase-status.is-unconfigured{color:#b42318;border-color:#f2c7c4;background:#fff7f6}
+.firebase-status.is-offline .firebase-status-dot,.firebase-status.is-unconfigured .firebase-status-dot{background:#dc2626;box-shadow:0 0 0 3px rgba(220,38,38,.13)}
+.firebase-status.is-checking{color:#946200;border-color:#f0dfaa;background:#fffbeb}
+.firebase-status.is-checking .firebase-status-dot{background:#d69e17;box-shadow:0 0 0 3px rgba(214,158,23,.14)}
+@media(max-width:760px){
+ .user-area{gap:7px}
+ .firebase-status{font-size:10px;padding:6px 8px;gap:6px}
+ .firebase-status-dot{width:7px;height:7px}
+}
+@media(max-width:430px){
+ .firebase-status{padding:6px 7px}
+ .firebase-status #connectionLabel{max-width:100px;overflow:hidden;text-overflow:ellipsis}
+}
