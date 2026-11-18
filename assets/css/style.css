@@ -22,3 +22,49 @@
 .stat-button:hover{transform:translateY(-2px);box-shadow:0 5px 18px rgba(16,42,67,.10)}
 .stat-button:focus-visible{outline:3px solid #60a5fa;outline-offset:2px}
 #publicFinanceDetail{margin:18px 0}
+
+
+/* Payment workflow */
+.payment-panel{max-width:980px;margin:0 auto}
+.payment-panel .section-head small{display:block;margin-top:5px}
+.payment-period{margin:20px 0 12px}
+.payment-categories{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.payment-category{min-width:0;border:1px solid var(--line);border-radius:14px;padding:15px;background:#fff}
+.payment-category-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.payment-category-head h4{font:700 14px Manrope;margin:0 0 5px}
+.payment-category-head strong{font:800 16px Manrope;white-space:nowrap}
+.payment-metrics{display:grid;gap:7px;margin:14px 0;padding:11px;background:#f5f8fa;border-radius:10px}
+.payment-metrics>div{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.payment-metrics small{color:var(--muted)}
+.payment-metrics b{font-variant-numeric:tabular-nums;text-align:right}
+.payment-metrics .deposit-used{color:var(--green)}
+.pay-exact{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line);cursor:pointer}
+.pay-exact input{width:20px;height:20px;accent-color:var(--blue);flex:0 0 auto}
+.pay-exact span{display:grid;gap:3px}
+.pay-exact small,.payment-result{font-size:11px;color:var(--muted);font-weight:400}
+.payment-amount-field{margin:8px 0 0}
+.payment-amount-field input{font-size:16px;font-weight:700}
+.payment-result{display:block;line-height:1.4}
+.payment-meta{margin-top:8px}
+.payment-summary{margin:12px 0}
+.payment-note{margin:12px 0}
+#savePayment{min-height:48px}
+@media(max-width:900px){.payment-categories{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){
+  .payment-panel{padding:14px;border-radius:13px}
+  .payment-panel .section-head{align-items:flex-start}
+  .payment-panel .section-head .pill{white-space:nowrap}
+  .payment-categories{grid-template-columns:1fr;gap:10px}
+  .payment-category{padding:14px}
+  .payment-category-head strong{font-size:18px}
+  .payment-metrics{grid-template-columns:1fr;gap:8px}
+  .payment-metrics>div{font-size:13px}
+  .pay-exact{padding:13px 0}
+  .pay-exact input{width:22px;height:22px}
+  .payment-amount-field input{min-height:48px;font-size:17px}
+  .payment-meta{grid-template-columns:1fr}
+  .payment-summary{padding:13px}
+  .payment-summary .summary-line{font-size:12px;gap:10px}
+  .payment-summary .summary-line b{text-align:right}
+  .payment-panel .field{margin:12px 0}
+}
