@@ -170,6 +170,10 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
     await update(ref(db),updates);
+    for(const [id,row] of Object.entries(updates).filter(([path])=>path.startsWith(`bills/${period}/`))){
+      const total=Number(row.kas?.remaining||0)+Number(row.air?.remaining||0)+Number(row.sampah?.remaining||0);
+      await applyArrearsDelta(id,`bill-${period}`,{kas:Number(row.kas?.remaining)||0,air:Number(row.air?.remaining)||0,sampah:Number(row.sampah?.remaining)||0});
+    }
     return {period,householdCount:active.length};
   } catch(error) {
     await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
@@ -206,6 +210,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await update(ref(db),updates);
+  await applyArrearsDelta(householdId,`water-${period}`,{air:usageAmount});
   return reading;
 }
 
@@ -272,6 +277,7 @@ export async function createExpense({category, amount, date, description, proof,
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
   await update(ref(db), updates);
+  await applyMonthlySummaryDelta(period,expenseRef.key,{type:"expense",category,amount:value,date:record.date,description:record.description});
   return record;
 }
 
