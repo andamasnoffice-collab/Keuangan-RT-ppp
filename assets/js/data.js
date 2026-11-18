@@ -1,4 +1,4 @@
-import { ref, get, onValue, push, set, update, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+import { ref, get, onValue, push, set, update, runTransaction, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
 
 const root = (path) => ref(db, path);
@@ -34,6 +34,86 @@ export async function getPayments() {
 }
 export async function getExpenses() {
   return await read("expenses") || {};
+}
+
+
+const validPeriod = value => /^\\d{4}-(0[1-9]|1[0-2])$/.test(value);
+export async function createMonthlyBills(period, recordedBy) {
+  if (!db) throw new Error("Firebase belum dikonfigurasi.");
+  if (!validPeriod(period)) throw new Error("Periode tagihan tidak valid.");
+  const lockRef=root(`billing_runs/${period}`);
+  const claim=await runTransaction(lockRef,current=>{
+    if(current) return;
+    return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null};
+  },{applyLocally:false});
+  if(!claim.committed) {
+    const state=claim.snapshot.val();
+    if(state?.status==="completed") throw new Error(`Tagihan periode ${period} sudah pernah dibuat. Tidak dapat dibuat dua kali.`);
+    throw new Error("Pembuatan tagihan periode ini sedang diproses atau perlu pemeriksaan pengurus.");
+  }
+  try {
+    const [homes,settings,existing]=await Promise.all([
+      getHouseholds(),getBillingSettings(),getMonthBills(period)
+    ]);
+    const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
+    if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
+    if(Object.keys(existing).length) throw new Error("Data tagihan periode ini sudah ada. Proses dihentikan agar tidak menimpa tagihan.");
+    const updates={};
+    const now=Date.now();
+    for(const [id,h] of active){
+      const kas=Number(settings.kasMonthly)||0;
+      const sampah=Number(settings.sampahMonthly)||0;
+      const admin=Number(settings.waterAdmin)||0;
+      const row={
+        kas:{amount:kas,paidAmount:0,remaining:kas,status:kas>0?"unpaid":"paid",createdAt:now},
+        sampah:{amount:sampah,paidAmount:0,remaining:sampah,status:sampah>0?"unpaid":"paid",createdAt:now},
+        air:{amount:admin,adminAmount:admin,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:admin,status:admin>0?"unpaid":"paid",createdAt:now}
+      };
+      updates[`bills/${period}/${id}`]=row;
+    }
+    updates[`billing_runs/${period}/status`]="completed";
+    updates[`billing_runs/${period}/completedAt`]=now;
+    updates[`billing_runs/${period}/householdCount`]=active.length;
+    updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
+    updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
+    await update(root(""),updates);
+    return {period,householdCount:active.length};
+  } catch(error) {
+    await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
+    throw error;
+  }
+}
+
+export async function saveWaterReading({period,householdId,currentMeter,recordedBy}) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  if(!validPeriod(period)) throw new Error("Periode tidak valid.");
+  const value=Number(currentMeter);
+  if(!Number.isFinite(value)||value<0) throw new Error("Angka meter akhir tidak valid.");
+  const [house,settings,bill,existingReading]=await Promise.all([
+    read(`households/${householdId}`),getBillingSettings(),read(`bills/${period}/${householdId}/air`),read(`water_readings/${period}/${householdId}`)
+  ]);
+  if(!house) throw new Error("Data rumah tidak ditemukan.");
+  if(!bill) throw new Error("Tagihan periode ini belum dibuat. Buat tagihan bulan berjalan terlebih dahulu.");
+  if(existingReading) throw new Error("Meter air rumah ini sudah dicatat untuk periode tersebut. Koreksi harus dilakukan melalui prosedur koreksi, bukan input ulang.");
+  const previous=Number(house.currentWaterMeter??house.initialWaterMeter)||0;
+  if(value<previous) throw new Error(`Meter akhir tidak boleh lebih kecil dari meter awal (${previous}).`);
+  const usage=Number((value-previous).toFixed(3));
+  const rate=Number(settings.waterPerM3)||0;
+  const admin=Number(bill.adminAmount??settings.waterAdmin)||0;
+  const usageAmount=Math.round(usage*rate);
+  const total=admin+usageAmount;
+  const paid=Number(bill.paidAmount)||0;
+  const remaining=Math.max(0,total-paid);
+  const timestamp=Date.now();
+  const reading={period,householdId,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
+  const updates={};
+  updates[`water_readings/${period}/${householdId}`]=reading;
+  updates[`households/${householdId}/currentWaterMeter`]=value;
+  updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
+  const logRef=push(root("audit_logs"));
+  updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
+  await update(root(""),updates);
+  return reading;
 }
 
 export async function getBillingSettings() {
