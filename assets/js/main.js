@@ -1,8 +1,8 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, refreshPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js?v=20261118-arrears-ledger1";
-import { renderPaymentPage } from "./payments.js?v=20261118-4";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, refreshPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js?v=20261118-auto-public1";
+import { renderPaymentPage } from "./payments.js?v=20261118-auto-public1";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
 const $ = s => document.querySelector(s);
