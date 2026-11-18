@@ -287,109 +287,39 @@ export async function createExpense({category, amount, date, description, proof,
  * Never includes resident names, phone numbers, family members, or payment details.
  * Public pages read only /public_views; private source nodes remain auth-only.
  */
-export async function publishPublicSnapshot(currentPeriod, households, balances, billsByPeriod, transactions = {}, expenses = {}) {
+export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
-  const publicBillsByPeriod = {};
-  const allOutstandingByHousehold = {};
-  let totalOutstanding = 0;
-
-  for (const [period, householdsInPeriod] of Object.entries(billsByPeriod || {})) {
-    const periodRows = {};
-    for (const [householdId, bill] of Object.entries(householdsInPeriod || {})) {
-      const house = households?.[householdId] || {};
-      const row = {
-        label: String(house.block || "Rumah terdaftar").slice(0, 60),
-        kas: Math.max(0, Number(bill?.kas?.remaining) || 0),
-        sampah: Math.max(0, Number(bill?.sampah?.remaining) || 0),
-        air: Math.max(0, Number(bill?.air?.remaining) || 0)
-      };
-      row.total = row.kas + row.sampah + row.air;
-      if (row.total > 0) {
-        periodRows[householdId] = row;
-        if (!allOutstandingByHousehold[householdId]) {
-          allOutstandingByHousehold[householdId] = {label: row.label, kas:0, sampah:0, air:0, total:0, periodCount:0};
-        }
-        for (const cat of ["kas","sampah","air"]) allOutstandingByHousehold[householdId][cat] += row[cat];
-        allOutstandingByHousehold[householdId].total += row.total;
-        allOutstandingByHousehold[householdId].periodCount += 1;
-        totalOutstanding += row.total;
-      }
-    }
-    publicBillsByPeriod[period] = periodRows;
+  const allOutstanding={};
+  let totalOutstanding=0;
+  for(const [id,value] of Object.entries(arrearsSummary||{})){
+    const total=Math.max(0,Number(value?.total)||0);
+    if(!total) continue;
+    const house=households?.[id]||{};
+    allOutstanding[id]={label:String(house.block||"Rumah terdaftar").slice(0,60),kas:Math.max(0,Number(value.kas)||0),air:Math.max(0,Number(value.air)||0),sampah:Math.max(0,Number(value.sampah)||0),total};
+    totalOutstanding+=total;
   }
-
-  const categoryTotals = {};
-  for (const category of ["kas", "sampah", "air"]) {
-    const b = balances?.[category] || {};
-    categoryTotals[category] = {
-      balance: Number(b.balance) || 0,
-      income: Number(b.income) || 0,
-      expense: Number(b.expense) || 0
+  const categoryTotals={};
+  for(const category of ["kas","sampah","air"]){
+    const b=balances?.[category]||{};
+    categoryTotals[category]={balance:Number(b.balance)||0,income:Number(b.income)||0,expense:Number(b.expense)||0};
+  }
+  const financeByMonth={};
+  for(const [period,summary] of Object.entries(financeSummaryByMonth||{})){
+    const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:String(x.description||"Pemasukan").slice(0,120)}));
+    const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:String(x.description||"Pengeluaran").slice(0,120)}));
+    financeByMonth[period]={
+      income:incomeItems,
+      expenses:expenseItems,
+      totals:{income:Number(summary?.income)||0,expenses:Number(summary?.expenses)||0}
     };
   }
-
-  const financeByMonth = {};
-  const monthOf = value => {
-    if (typeof value === "number") return new Date(value).toISOString().slice(0, 7);
-    const s = String(value || "");
-    if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);
-    const n = Number(s);
-    return Number.isFinite(n) && n > 0 ? new Date(n).toISOString().slice(0, 7) : "";
-  };
-  const safeDescription = value => String(value || "Transaksi").replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, "[data pribadi]").replace(/(?:\+?62|0)\d[\d\s-]{7,}/g, "[nomor disamarkan]").slice(0, 120);
-
-  const ensureMonth = month => {
-    if (!month) return null;
-    if (!financeByMonth[month]) financeByMonth[month] = { income: [], expenses: [], totals: { income: 0, expenses: 0 } };
-    return financeByMonth[month];
-  };
-
-  const transactionRows=Object.entries(transactions||{}).flatMap(([key,value])=>value&&typeof value==="object"&&!value.type&&!value.amount?Object.entries(value).map(([id,row])=>[id,row]):[[key,value]]);
-  for (const [id, tx] of transactionRows) {
-    const type = String(tx?.type || tx?.direction || tx?.kind || "").toLowerCase();
-    if (!/(income|pemasukan|payment|pembayaran|setoran)/.test(type) || /(expense|pengeluaran)/.test(type)) continue;
-    const month = monthOf(tx.date || tx.createdAt || tx.timestamp);
-    const bucket = ensureMonth(month);
-    if (!bucket) continue;
-    const amount = Math.max(0, Number(tx.amount) || 0);
-    if (!amount) continue;
-    const category = ["kas", "sampah", "air"].includes(tx.category) ? tx.category : "lainnya";
-    bucket.income.push({ date: tx.date || tx.createdAt || tx.timestamp || null, category, amount, description: safeDescription(tx.publicDescription || tx.description || "Pemasukan") });
-    bucket.totals.income += amount;
-  }
-
-  const expenseRows=Object.entries(expenses||{}).flatMap(([key,value])=>value&&typeof value==="object"&&!value.amount?Object.entries(value).map(([id,row])=>[id,row]):[[key,value]]);
-  for (const [id, expense] of expenseRows) {
-    const month = monthOf(expense?.date || expense?.createdAt || expense?.timestamp);
-    const bucket = ensureMonth(month);
-    if (!bucket) continue;
-    const amount = Math.max(0, Number(expense.amount) || 0);
-    if (!amount) continue;
-    const category = ["kas", "sampah", "air"].includes(expense.category) ? expense.category : "lainnya";
-    bucket.expenses.push({ date: expense.date || expense.createdAt || expense.timestamp || null, category, amount, description: safeDescription(expense.publicDescription || expense.description || "Pengeluaran") });
-    bucket.totals.expenses += amount;
-  }
-
-  for (const month of Object.values(financeByMonth)) {
-    month.income.sort((a,b) => Number(b.date || 0) - Number(a.date || 0));
-    month.expenses.sort((a,b) => Number(b.date || 0) - Number(a.date || 0));
-  }
-
-  const payload = {
-    dashboard: {
-      period: currentPeriod,
-      householdCount: Object.keys(households || {}).length,
-      outstandingHouseholds: Object.values(allOutstandingByHousehold).filter(x => x.total > 0).length,
-      totalOutstanding,
-      categories: categoryTotals,
-      updatedAt: Date.now()
-    },
-    billsByPeriod: publicBillsByPeriod,
-    allOutstanding: allOutstandingByHousehold,
+  const payload={
+    dashboard:{period:currentPeriod,householdCount:Object.keys(households||{}).length,outstandingHouseholds:Object.keys(allOutstanding).length,totalOutstanding,categories:categoryTotals,updatedAt:Date.now()},
+    allOutstanding,
     financeByMonth,
-    updatedAt: Date.now()
+    updatedAt:Date.now()
   };
-  await set(root("public_views"), payload);
+  await set(root("public_views"),payload);
   return payload;
 }
 
