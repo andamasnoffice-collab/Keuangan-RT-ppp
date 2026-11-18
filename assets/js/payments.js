@@ -30,17 +30,19 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       box.innerHTML=`
         <div class="section-head payment-period"><h3>Akumulasi tagihan sampai ${esc(monthKey)}</h3><span class="pill">Deposit otomatis diperhitungkan</span></div>
         <div class="summary-box payment-month-total" style="margin:12px 0 16px;padding:16px;border:1px solid var(--border,#dbe4ee);border-radius:14px;background:#eef5f8"><div class="muted tiny">TOTAL HARUS DIBAYARKAN BULAN INI (SETELAH DEPOSIT)</div><div id="sumMonthDue" style="font-size:clamp(24px,4vw,32px);font-weight:800;margin-top:5px">${money(0)}</div><small class="muted">Jumlah kewajiban semua bulan yang belum lunas, setelah deposit kategori masing-masing diperhitungkan. Pembayaran mengutamakan bulan tertua.</small></div>\n        <div class="payment-categories">${categories.map(cat=>{
-          const gross=periodBills.reduce((sum,row)=>sum+num(row.categories?.[cat]),0);
+          const duePeriods=periodBills.filter(row=>row.period<=monthKey && num(row.categories?.[cat])>0);
+          const gross=duePeriods.reduce((sum,row)=>sum+num(row.categories?.[cat]),0);
           const deposit=num(dep?.[cat]);
           const depositUsed=Math.min(gross,deposit);
           const net=Math.max(0,gross-depositUsed);
+          const monthCount=duePeriods.length;
           return `<section class="payment-category" data-category="${cat}" data-gross="${gross}" data-deposit="${deposit}" data-deposit-used="${depositUsed}" data-net="${net}">
-            <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Akumulasi seluruh bulan belum lunas</span></div><strong>${money(gross)}</strong></div>
-            <div class="payment-metrics">
-              <div><small>Deposit tersedia</small><b>${money(deposit)}</b></div>
-              <div><small>Deposit dipakai</small><b class="deposit-used">${money(depositUsed)}</b></div>
-              <div><small>Sisa setelah deposit</small><b class="net-due">${money(net)}</b></div>
+            <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Tunggakan ${monthCount} bulan</span></div><strong>${money(gross)}</strong></div>
+            <div class="payment-metrics payment-arrears-metrics">
+              <div><small>Total tunggakan</small><b>${money(gross)}</b></div>
+              <div><small>Setelah deposit</small><b class="net-due">${money(net)}</b></div>
             </div>
+            <div class="muted tiny payment-deposit-note">Deposit kategori ini diperhitungkan otomatis: ${money(depositUsed)} dipakai dari ${money(deposit)} tersedia.</div>
             <label class="pay-exact"><input type="checkbox" class="pay-exact-check" ${net<=0?"disabled":""}><span><b>Bayar pas</b><small>Isi otomatis sebesar sisa setelah deposit</small></span></label>
             <label class="field payment-amount-field">Nominal dibayar manual (Rp)<input class="payment-amount" type="text" inputmode="numeric" data-rupiah value="0"><small class="payment-result">Belum ada pembayaran manual.</small></label>
           </section>`;
