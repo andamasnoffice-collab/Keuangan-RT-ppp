@@ -74,7 +74,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         box.querySelector("#sumShort").textContent=money(short);
       };
       cards.forEach(card=>{
-        card.querySelector(".pay-exact-check").addEventListener("change",calculate);
+        card.querySelector(".pay-exact-check").addEventListener("change",e=>{if(!e.target.checked)card.querySelector(".payment-amount").value="0";calculate();});
         card.querySelector(".payment-amount").addEventListener("input",()=>{if(!card.querySelector(".pay-exact-check").checked)calculate();});
       });
       calculate();
