@@ -302,11 +302,110 @@ async function renderDashboard(c){
 }
 function renderHouseholds(c){
   const rows=Object.entries(households).map(([id,h])=>({...h,id})).sort((a,b)=>(a.block||"").localeCompare(b.block||""));
-  c.innerHTML=`<div class="toolbar"><input id="houseSearch" class="search-input" placeholder="Cari blok, alamat, nama kepala keluarga"><button id="addHouse" class="btn primary">+ Tambah rumah</button></div><div class="section-head"><h3>Daftar rumah (${rows.length})</h3></div><div class="table-wrap"><table><thead><tr><th>Blok / No. Rumah</th><th>Kepala keluarga</th><th>Alamat</th><th>Anggota</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="houseRows">${rows.map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Belum ada data rumah.</td></tr>'}</tbody></table></div>`;
+  c.innerHTML=`<div class="household-tools"><div class="toolbar"><input id="houseSearch" class="search-input" placeholder="Cari blok, alamat, nama kepala keluarga"><button id="addHouse" class="btn primary">+ Tambah rumah</button></div><div class="toolbar household-import-actions"><button id="downloadHouseTemplate" class="btn secondary">↓ Export Template Excel</button><label class="btn outline file-button" for="houseImportFile">↑ Impor Excel / CSV</label><input id="houseImportFile" type="file" accept=".xlsx,.xls,.csv" hidden></div></div><div id="houseImportPreview"></div><div class="section-head"><h3>Daftar rumah (${rows.length})</h3><span class="pill">Master data warga</span></div><div class="table-wrap"><table><thead><tr><th>Blok / No. Rumah</th><th>Kepala keluarga</th><th>Alamat</th><th>Anggota</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="houseRows">${rows.map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Belum ada data rumah.</td></tr>'}</tbody></table></div>`;
   const draw=filter=>{$("#houseRows").innerHTML=rows.filter(h=>`${h.block} ${h.address} ${h.headName}`.toLowerCase().includes(filter.toLowerCase())).map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Tidak ada rumah yang cocok.</td></tr>';};
   $("#houseSearch").addEventListener("input",e=>draw(e.target.value));
   $("#addHouse").addEventListener("click",()=>houseDialog());
   $("#houseRows").addEventListener("click",e=>{const b=e.target.closest("[data-edit-house]");if(!b)return;const h=rows.find(x=>x.id===b.dataset.editHouse);if(h)houseDialog(h);});
+  $("#downloadHouseTemplate").addEventListener("click",downloadHouseholdTemplate);
+  $("#houseImportFile").addEventListener("change",handleHouseholdImport);
+}
+const HOUSE_IMPORT_HEADERS=["Blok / No Rumah","Nama Kepala Keluarga","Alamat Lengkap","Nomor HP","Nomor WhatsApp","Status (active/empty/rented)","Meter Air Awal (m3)","Anggota 1 - Nama","Anggota 1 - Hubungan","Anggota 2 - Nama","Anggota 2 - Hubungan","Anggota 3 - Nama","Anggota 3 - Hubungan","Anggota 4 - Nama","Anggota 4 - Hubungan","Anggota 5 - Nama","Anggota 5 - Hubungan","Periode Tunggakan Awal (YYYY-MM)","Tunggakan Awal Kas RT (Rp)","Tunggakan Awal Air (Rp)","Tunggakan Awal Sampah (Rp)"];
+function downloadHouseholdTemplate(){
+  ensureXLSX().then(XLSX=>{
+    const wb=XLSX.utils.book_new();
+    const template=[HOUSE_IMPORT_HEADERS];
+    const ws=XLSX.utils.aoa_to_sheet(template);
+    ws["!cols"]=HOUSE_IMPORT_HEADERS.map((h,i)=>({wch:i<3?25:i<7?19:22}));
+    XLSX.utils.book_append_sheet(wb,ws,"Data Rumah Warga");
+    const guide=[
+      ["PANDUAN IMPOR DATA RUMAH & WARGA"],
+      ["Isi satu baris untuk satu rumah. Baris pertama (judul kolom) jangan diubah."],
+      ["Kolom wajib: Blok / No Rumah, Nama Kepala Keluarga, Alamat Lengkap."],
+      ["Status: active = dihuni, empty = kosong, rented = kontrak. Jika kosong, sistem menganggap active."],
+      ["Meter Air Awal: angka meter saat rumah mulai dicatat, satuan m³. Isi 0 jika belum ada data."],
+      ["Anggota: isi nama dan hubungan pada pasangan kolom Anggota 1 sampai Anggota 5. Kolom anggota boleh kosong."],
+      ["Periode Tunggakan Awal: format YYYY-MM, contoh 2026-01. Wajib diisi jika salah satu nominal tunggakan awal lebih dari 0."],
+      ["Tunggakan awal Kas RT, Air, Sampah: isi sisa tagihan yang belum dibayar, angka rupiah tanpa tanda Rp."],
+      ["Nomor HP/WhatsApp: gunakan format teks, contoh 081234567890."],
+      ["Baris dengan Blok/No Rumah yang sudah ada di database akan dilewati, tidak menimpa data lama."],
+      ["Baris duplikat dalam file juga dilewati. Periksa pratinjau sebelum mengimpor."],
+      ["Impor tidak memasukkan meter bulanan, pembayaran, deposit, maupun transaksi."],
+      ["Simpan file sebagai .xlsx atau .csv UTF-8. Jangan menghapus atau mengganti nama header."]
+    ];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(guide),"Panduan");
+    const data=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    const url=URL.createObjectURL(new Blob([data],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    const a=document.createElement("a");a.href=url;a.download="Template_Rumah_Warga_Keuangan_Puri_Papahan.xlsx";a.click();URL.revokeObjectURL(url);
+  }).catch(e=>toast("Template gagal dibuat: "+e.message));
+}
+function parseHouseholdImport(matrix){
+  if(!matrix.length)throw new Error("File kosong.");
+  const headers=matrix[0].map(v=>String(v??"").trim().toLowerCase());
+  const find=name=>headers.indexOf(name.toLowerCase());
+  const ix=Object.fromEntries(HOUSE_IMPORT_HEADERS.map(h=>[h,find(h)]));
+  const required=HOUSE_IMPORT_HEADERS.slice(0,3);
+  const missing=required.filter(h=>ix[h]<0);
+  if(missing.length)throw new Error("Kolom wajib tidak ditemukan: "+missing.join(", "));
+  const val=(row,h)=>ix[h]<0?"":String(row[ix[h]]??"").trim();
+  const num=(row,h)=>{const raw=val(row,h);if(!raw)return 0;const n=Number(raw.replace(/[^0-9,.-]/g,"").replace(",", "."));return Number.isFinite(n)?n:NaN;};
+  return matrix.slice(1).filter(row=>val(row,HOUSE_IMPORT_HEADERS[0])).map((row,index)=>{
+    const status=(val(row,HOUSE_IMPORT_HEADERS[5])||"active").toLowerCase();
+    const period=val(row,HOUSE_IMPORT_HEADERS[17]);
+    const arrears={kas:num(row,HOUSE_IMPORT_HEADERS[18]),air:num(row,HOUSE_IMPORT_HEADERS[19]),sampah:num(row,HOUSE_IMPORT_HEADERS[20])};
+    const members=[];
+    for(let n=1;n<=5;n++){const name=val(row,`Anggota ${n} - Nama`);const relation=val(row,`Anggota ${n} - Hubungan`);if(name)members.push({name,relation:relation||"lainnya"});}
+    return {rowNumber:index+2,block:val(row,HOUSE_IMPORT_HEADERS[0]),headName:val(row,HOUSE_IMPORT_HEADERS[1]),address:val(row,HOUSE_IMPORT_HEADERS[2]),phone:val(row,HOUSE_IMPORT_HEADERS[3]),whatsapp:val(row,HOUSE_IMPORT_HEADERS[4]),status,initialWaterMeter:num(row,HOUSE_IMPORT_HEADERS[6]),period,arrears,members};
+  });
+}
+async function handleHouseholdImport(event){
+  const file=event.target.files?.[0];if(!file)return;
+  const input=event.target;input.disabled=true;
+  try{
+    let matrix;
+    if(file.name.toLowerCase().endsWith(".csv"))matrix=parseCsvText(await file.text());
+    else{const XLSX=await ensureXLSX();const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});matrix=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});}
+    const parsed=parseHouseholdImport(matrix),existingBlocks=new Set(Object.values(households).map(h=>String(h.block||"").trim().toLowerCase()));
+    const seen=new Set();let invalid=0,duplicates=0;
+    parsed.forEach(row=>{
+      const key=row.block.toLowerCase();
+      row.errors=[];
+      if(!row.headName)row.errors.push("Nama kepala keluarga kosong");
+      if(!row.address)row.errors.push("Alamat kosong");
+      if(!["active","empty","rented"].includes(row.status))row.errors.push("Status tidak valid");
+      if(!Number.isFinite(row.initialWaterMeter)||row.initialWaterMeter<0)row.errors.push("Meter awal tidak valid");
+      if(Object.values(row.arrears).some(v=>!Number.isFinite(v)||v<0))row.errors.push("Nominal tunggakan tidak valid");
+      if(Object.values(row.arrears).some(v=>v>0)&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(row.period))row.errors.push("Periode tunggakan harus YYYY-MM");
+      if(existingBlocks.has(key)||seen.has(key)){row.duplicate=true;duplicates++;}else seen.add(key);
+      if(row.errors.length)invalid++;
+    });
+    const ready=parsed.filter(x=>!x.duplicate&&!x.errors.length);
+    const errors=parsed.filter(x=>x.errors.length);
+    const preview=$("#houseImportPreview");
+    preview.innerHTML=`<section class="panel import-preview"><div class="section-head"><div><h3>Pratinjau impor rumah & warga</h3><p class="tiny muted">${escapeHtml(file.name)}</p></div><span class="pill">${parsed.length} baris</span></div><div class="grid stats"><div class="stat"><div class="label">Siap diimpor</div><div class="value">${ready.length}</div></div><div class="stat"><div class="label">Duplikat dilewati</div><div class="value">${duplicates}</div></div><div class="stat"><div class="label">Perlu diperbaiki</div><div class="value">${invalid}</div></div></div><div class="table-wrap"><table><thead><tr><th>Baris</th><th>Blok</th><th>Kepala keluarga</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${parsed.slice(0,100).map(x=>`<tr><td>${x.rowNumber}</td><td>${escapeHtml(x.block)}</td><td>${escapeHtml(x.headName)}</td><td>${escapeHtml(x.status)}</td><td>${x.duplicate?'<span class="pill warning">Duplikat · dilewati</span>':x.errors.length?'<span class="pill danger">'+escapeHtml(x.errors.join(", "))+'</span>':'<span class="pill success">Siap</span>'}</td></tr>`).join("")}</tbody></table></div><p class="tiny muted">Hanya rumah baru yang valid akan ditambahkan. Data rumah yang sudah ada tidak ditimpa.</p><button id="confirmHouseImport" class="btn primary" ${ready.length?"":"disabled"}>Impor ${ready.length} rumah ke Firebase</button><button id="cancelHouseImport" class="btn outline">Batal</button></section>`;
+    $("#cancelHouseImport").addEventListener("click",()=>{preview.innerHTML="";input.value="";});
+    $("#confirmHouseImport").addEventListener("click",async()=>{
+      const button=$("#confirmHouseImport");button.disabled=true;button.textContent="Mengimpor…";
+      let created=0,failed=[];
+      for(const row of ready){
+        try{
+          const members={head:{name:row.headName,relation:"kepala_keluarga",status:"active"}};
+          row.members.forEach((member,index)=>members[`m${index+1}`]={...member,status:"active"});
+          const openingArrears=row.arrears;
+          const hasArrears=Object.values(openingArrears).some(v=>v>0);
+          const data={block:row.block,headName:row.headName,address:row.address,phone:row.phone,whatsapp:{primaryNumber:row.whatsapp||row.phone||"",enabled:true},initialWaterMeter:row.initialWaterMeter,currentWaterMeter:row.initialWaterMeter,status:row.status,members,openingArrears,openingArrearsPeriod:hasArrears?row.period:null,openingArrearsRecorded:true,importedAt:Date.now(),importedBy:currentUser?.uid||null};
+          const id=await saveHousehold(data);
+          if(hasArrears)for(const cat of ["kas","air","sampah"])if(openingArrears[cat]>0)await setHouseholdArrearPeriod(id,row.period,cat,openingArrears[cat]);
+          created++;
+        }catch(err){failed.push(row.block+": "+err.message);}
+      }
+      households=await getHouseholds();householdsLoadedAt=Date.now();
+      preview.innerHTML=`<div class="muted-note">Impor selesai. Berhasil: ${created}. Gagal: ${failed.length}. ${failed.length?escapeHtml(failed.join(" | ")):""}</div>`;
+      toast(`Impor rumah selesai: ${created} berhasil, ${failed.length} gagal.`);
+      await render();
+    });
+  }catch(err){$("#houseImportPreview").innerHTML='<div class="muted-note">'+escapeHtml(err.message)+'</div>';toast("Impor gagal dibaca: "+err.message);}
+  finally{input.disabled=false;}
 }
 function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button></td></tr>`;}
 function houseDialog(existing=null){
