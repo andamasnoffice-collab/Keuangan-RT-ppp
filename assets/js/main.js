@@ -1,5 +1,5 @@
 import { firebaseConfigured, db } from "./firebase.js";
-import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
 import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js?v=20261118-auto-public1";
 import { renderPaymentPage } from "./payments.js?v=20261118-auto-public2";
@@ -146,15 +146,16 @@ async function renderGuestPage(){
 }
 
 async function renderPublicDashboard(c){
-  const d=await getPublicDashboard();
+  const [d,announcement]=await Promise.all([getPublicDashboard(),read("public_views/announcement")]);
+  const announcementHtml=announcement?.active&&announcement?.message?'<section class="panel public-announcement"><div class="announcement-heading"><span class="announcement-icon">!</span><div><span class="eyebrow">PENGUMUMAN WARGA</span><h3>'+escapeHtml(announcement.title||"Pengumuman")+'</h3></div></div><div class="announcement-message">'+escapeHtml(announcement.message).replace(/\n/g,"<br>")+'</div><div class="tiny muted">Diperbarui '+(announcement.updatedAt?new Date(announcement.updatedAt).toLocaleString("id-ID"):"-")+'</div></section>':"";
   if(!d){
-    c.innerHTML='<div class="panel"><h3>Dashboard Keuangan Perum Puri Papahan</h3><p class="muted">Ringkasan publik belum dipublikasikan oleh pengurus.</p><p class="tiny muted">Informasi keuangan akan muncul setelah pengurus menerbitkan ringkasan.</p></div>';
+    c.innerHTML=announcementHtml+'<div class="panel"><h3>Dashboard Keuangan Perum Puri Papahan</h3><p class="muted">Ringkasan publik belum dipublikasikan oleh pengurus.</p><p class="tiny muted">Informasi keuangan akan muncul setelah pengurus menerbitkan ringkasan.</p></div>';
     return;
   }
   const cats=d.categories||{};
   const fmt=n=>money(n);
   const cardButton=(id,label,value,sub)=>`<button type="button" class="stat stat-button" data-finance-detail="${id}"><div class="label">${label}</div><div class="value">${fmt(value)}</div><div class="sub">${sub||"Klik untuk rincian bulanan"}</div></button>`;
-  c.innerHTML=`
+  c.innerHTML=announcementHtml+`
     <div class="grid stats">
       ${card("Rumah terdaftar",Number(d.householdCount)||0,"Jumlah rumah")}
       ${card("Rumah dengan tunggakan",Number(d.outstandingHouseholds)||0,"Seluruh periode")}
@@ -244,12 +245,24 @@ async function renderDashboard(c){
   const operating=totals.reduce((s,x)=>s+(Number(x.balance)||0),0);
   const deposits=totals.reduce((s,x)=>s+(Number(x.deposit)||0),0);
   const homes=Object.values(households);
-  c.innerHTML=`  <div class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><div class="toolbar dashboard-billing-actions" style="margin-top:12px"><button id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><button id="publishPublicBtn" class="btn secondary">Perbarui Daftar Tagihan Publik</button></div><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div><div class="grid stats">${card("Total rumah",homes.length,"Data rumah terdaftar")}${card("Total anggota",homes.reduce((s,h)=>s+Object.keys(h.members||{}).length,0),"Anggota keluarga")}${card("Saldo operasional",money(operating),"Kas + sampah + air")}${card("Total deposit warga",money(deposits),"Kewajiban deposit, bukan saldo operasional")}</div>
+  const announcement=await read("public_views/announcement")||{active:false,title:"",message:""};
+  c.innerHTML=`  <section class="panel announcement-editor" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pengumuman warga</h3><p class="tiny muted">Tulis informasi yang akan dibaca seluruh warga pada Dashboard publik.</p></div><span class="pill">Publik</span></div><label class="field">Judul pengumuman<input id="announcementTitle" maxlength="90" value="${escapeHtml(announcement.title||"")}" placeholder="Contoh: Jadwal kerja bakti"></label><label class="field">Isi pengumuman<textarea id="announcementMessage" rows="4" maxlength="2000" placeholder="Tuliskan informasi untuk warga...">${escapeHtml(announcement.message||"")}</textarea></label><div class="toolbar"><label class="announcement-toggle"><input id="announcementActive" type="checkbox" ${announcement.active?"checked":""}> Tampilkan pengumuman kepada warga</label><button id="saveAnnouncementBtn" class="btn secondary">Simpan Pengumuman</button></div><p class="tiny muted" id="announcementStatus">${announcement.updatedAt?"Terakhir diperbarui "+new Date(announcement.updatedAt).toLocaleString("id-ID"):"Belum ada pengumuman tersimpan."}</p></section><div class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><div class="toolbar dashboard-billing-actions" style="margin-top:12px"><button id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><button id="publishPublicBtn" class="btn secondary">Perbarui Daftar Tagihan Publik</button></div><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div><div class="grid stats">${card("Total rumah",homes.length,"Data rumah terdaftar")}${card("Total anggota",homes.reduce((s,h)=>s+Object.keys(h.members||{}).length,0),"Anggota keluarga")}${card("Saldo operasional",money(operating),"Kas + sampah + air")}${card("Total deposit warga",money(deposits),"Kewajiban deposit, bukan saldo operasional")}</div>
   <div class="section-head"><h3>Saldo setiap kategori</h3><span class="pill">Periode ${monthKey()}</span></div>
   <div class="grid category-grid">${categoryCard("Kas RT",totals[0].balance,totals[0].income,totals[0].expense,totals[0].deposit)}${categoryCard("Uang Sampah",totals[1].balance,totals[1].income,totals[1].expense,totals[1].deposit)}${categoryCard("Uang Air",totals[2].balance,totals[2].income,totals[2].expense,totals[2].deposit)}</div>
   <div class="section-head"><h3>Catatan penting</h3></div><div class="muted-note">Deposit dipisahkan per kategori dan tidak dapat dipindahkan antar-kategori. Saldo kategori ditampilkan terpisah dari deposit warga.</div>
 
 `;
+  $("#saveAnnouncementBtn").addEventListener("click",async()=>{
+    const button=$("#saveAnnouncementBtn"),titleText=$("#announcementTitle").value.trim(),message=$("#announcementMessage").value.trim(),active=$("#announcementActive").checked;
+    if(active&&!message){toast("Isi pengumuman terlebih dahulu atau nonaktifkan tampilannya.");return;}
+    button.disabled=true;button.textContent="Menyimpan…";
+    try{
+      await set(ref(db,"public_views/announcement"),{title:titleText||"Pengumuman Warga",message,active,updatedAt:Date.now(),updatedBy:currentUser?.uid||null});
+      $("#announcementStatus").textContent="Berhasil disimpan · "+new Date().toLocaleString("id-ID");
+      toast("Pengumuman berhasil disimpan.");
+    }catch(err){toast("Pengumuman gagal disimpan: "+err.message);}
+    finally{button.disabled=false;button.textContent="Simpan Pengumuman";}
+  });
   const run=await read(`billing_runs/${monthKey()}`);
   const runBadge=$("#billingRunBadge"),runButton=$("#createMonthlyBillsBtn"),runMessage=$("#billingRunMessage");
   if(run?.status==="completed"){
@@ -281,7 +294,8 @@ async function renderDashboard(c){
   $("#publishPublicBtn").addEventListener("click", async ()=>{
     try{
       const [financeSummary,arrearsSummary,arrearsLedger]=await Promise.all([read("financeSummaryByMonth"),read("arrearsSummary"),read("arrearsLedger")]);
-      await publishPublicSnapshot(monthKey(),households,balances,financeSummary||{},arrearsSummary||{},arrearsLedger||{});
+      const currentAnnouncement=await read("public_views/announcement");
+      await publishPublicSnapshot(monthKey(),households,balances,financeSummary||{},arrearsSummary||{},arrearsLedger||{},currentAnnouncement||null);
       toast("Informasi publik berhasil diperbarui.");
     }catch(e){toast("Gagal memperbarui tampilan publik: "+e.message);}
   });
