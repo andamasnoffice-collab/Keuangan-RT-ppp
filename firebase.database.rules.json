@@ -61,6 +61,18 @@
     "billing_runs": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "transactionsByMonth": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "expensesByMonth": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "paymentsByMonth": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
