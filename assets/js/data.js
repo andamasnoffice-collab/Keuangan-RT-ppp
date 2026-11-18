@@ -421,7 +421,7 @@ export async function createExpense({category, amount, date, description, proof,
  * Never includes resident names, phone numbers, family members, or payment details.
  * Public pages read only /public_views; private source nodes remain auth-only.
  */
-export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary, arrearsLedger={}) {
+export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary, arrearsLedger={}, announcement=null) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   const allOutstanding={};
   let totalOutstanding=0;
@@ -474,6 +474,7 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
     dashboard:{period:currentPeriod,householdCount:Object.keys(households||{}).length,outstandingHouseholds:Object.keys(allOutstanding).length,totalOutstanding,categories:categoryTotals,updatedAt:Date.now()},
     allOutstanding,
     financeByMonth,
+    ...(announcement?{announcement}:{}),
     updatedAt:Date.now()
   };
   await set(root("public_views"),payload);
