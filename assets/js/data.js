@@ -23,6 +23,50 @@ export async function saveHousehold(data) {
   await set(root(`households/${id}`), {...data, id, updatedAt:Date.now()});
   return id;
 }
+export async function applyMonthlySummaryDelta(period, entryId, delta) {
+  if(!validPeriod(period)) throw new Error("Periode ringkasan tidak valid.");
+  const summaryRef=root(`financeSummaryByMonth/${period}`);
+  const result=await runTransaction(summaryRef,current=>{
+    const s=current||{income:0,expenses:0,byCategory:{},incomeItems:{},expenseItems:{},applied:{}};
+    s.applied=s.applied||{};
+    if(s.applied[entryId]) return s;
+    const amount=Math.max(0,Number(delta.amount)||0);
+    const category=["kas","air","sampah"].includes(delta.category)?delta.category:"lainnya";
+    s.byCategory=s.byCategory||{};
+    s.byCategory[category]=s.byCategory[category]||{income:0,expenses:0};
+    if(delta.type==="income"){
+      s.income=(Number(s.income)||0)+amount;
+      s.byCategory[category].income+=amount;
+      s.incomeItems=s.incomeItems||{};
+      s.incomeItems[entryId]={date:delta.date||null,category,amount,description:String(delta.description||"Pemasukan").slice(0,120)};
+    }else if(delta.type==="expense"){
+      s.expenses=(Number(s.expenses)||0)+amount;
+      s.byCategory[category].expenses+=amount;
+      s.expenseItems=s.expenseItems||{};
+      s.expenseItems[entryId]={date:delta.date||null,category,amount,description:String(delta.description||"Pengeluaran").slice(0,120)};
+    }
+    s.applied[entryId]=true;
+    s.updatedAt=Date.now();
+    return s;
+  },{applyLocally:false});
+  if(!result.committed) throw new Error("Ringkasan bulanan tidak berhasil diperbarui.");
+  return result.snapshot.val();
+}
+export async function applyArrearsDelta(householdId, entryId, delta) {
+  const summaryRef=root(`arrearsSummary/${householdId}`);
+  const result=await runTransaction(summaryRef,current=>{
+    const s=current||{kas:0,air:0,sampah:0,total:0,applied:{}};
+    s.applied=s.applied||{};
+    if(s.applied[entryId]) return s;
+    for(const cat of ["kas","air","sampah"]) s[cat]=Math.max(0,(Number(s[cat])||0)+(Number(delta[cat])||0));
+    s.total=s.kas+s.air+s.sampah;
+    s.applied[entryId]=true;
+    s.updatedAt=Date.now();
+    return s;
+  },{applyLocally:false});
+  if(!result.committed) throw new Error("Ringkasan tunggakan tidak berhasil diperbarui.");
+  return result.snapshot.val();
+}
 export async function getHouseholds() {
   return await read("households") || {};
 }
