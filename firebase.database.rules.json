@@ -57,6 +57,10 @@
     "public_views": {
       ".read": true,
       ".write": "auth != null"
+    },
+    "billing_runs": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
