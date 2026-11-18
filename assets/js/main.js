@@ -290,8 +290,8 @@ async function renderDashboard(c){
   $("#publishPublicBtn").addEventListener("click", async ()=>{
     try{
       const allBills=await read("bills")||{};
-      const transactions=await read("transactions")||{};
-      const expenses=await read("expenses")||{};
+      const transactions=await read("transactionsByMonth")||{};
+      const expenses=await read("expensesByMonth")||{};
       await publishPublicSnapshot(monthKey(),households,balances,allBills,transactions,expenses);
       toast("Informasi publik berhasil diperbarui.");
     }catch(e){toast("Gagal memperbarui tampilan publik: "+e.message);}
