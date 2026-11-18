@@ -148,7 +148,7 @@ async function renderGuestPage(){
 async function renderPublicDashboard(c){
   const d=await getPublicDashboard();
   if(!d){
-    c.innerHTML='<div class="panel"><h3>Dashboard Keuangan RT</h3><p class="muted">Ringkasan publik belum dipublikasikan oleh pengurus.</p><p class="tiny muted">Informasi keuangan akan muncul setelah pengurus menerbitkan ringkasan.</p></div>';
+    c.innerHTML='<div class="panel"><h3>Dashboard Keuangan Perum Puri Papahan</h3><p class="muted">Ringkasan publik belum dipublikasikan oleh pengurus.</p><p class="tiny muted">Informasi keuangan akan muncul setelah pengurus menerbitkan ringkasan.</p></div>';
     return;
   }
   const cats=d.categories||{};
