@@ -6,7 +6,10 @@ import { renderPaymentPage } from "./payments.js";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
 const $ = s => document.querySelector(s);
-const money = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
+const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
+const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) || 0;
+const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\\B(?=(\\d{3})+(?!\\d))/g,".");
+function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 let currentUser=null, currentProfile=null, page="dashboard", households={};
 
@@ -94,7 +97,7 @@ async function render(){
 }
 async function renderSettings(c){
   const settings=await getBillingSettings();
-  const field=(label,name,value,help)=>`<label class="field">${label}<input name="${name}" type="number" min="0" step="100" inputmode="numeric" value="${Number(value)||0}" required><small class="muted tiny">${help}</small></label>`;
+  const field=(label,name,value,help)=>`<label class="field">${label}<input name="${name}" type="text" inputmode="numeric" data-rupiah value="${formatRupiahInput(value)}" placeholder="Rp 0" required><small class="muted tiny">${help}</small></label>`;
   c.innerHTML=`
     <div class="panel">
       <div class="section-head" style="margin-top:0"><h3>Tarif dan iuran bulanan</h3><span class="pill success">Dapat diubah kapan saja</span></div>
@@ -115,9 +118,10 @@ async function renderSettings(c){
       </form>
     </div>
     <div class="muted-note" style="margin-top:14px">Catatan: perubahan tarif tidak boleh menimpa tagihan bulan yang sudah terbentuk. Pengaturan ini menyimpan tarif ke Firebase; proses pembentukan tagihan bulanan otomatis dan pencatatan meter air merupakan tahap implementasi terpisah.</div>`;
+  bindRupiahInputs($("#billingSettingsForm"));
   $("#billingSettingsForm").addEventListener("submit",async e=>{
     e.preventDefault(); const f=new FormData(e.currentTarget);
-    const values=Object.fromEntries(["kasMonthly","sampahMonthly","waterAdmin","waterPerM3","openingKas","openingAir","openingSampah"].map(k=>[k,f.get(k)]));
+    const values=Object.fromEntries(["kasMonthly","sampahMonthly","waterAdmin","waterPerM3","openingKas","openingAir","openingSampah"].map(k=>[k,parseRupiah(f.get(k))]));
     const button=e.currentTarget.querySelector('button[type="submit"]'); button.disabled=true; button.textContent="Menyimpan…";
     try{const saved=await saveBillingSettings(values); $("#settingsSavedAt").textContent=`Tersimpan: ${new Date(saved.updatedAt).toLocaleString("id-ID")}`; toast("Pengaturan tarif berhasil disimpan ke Firebase.");}
     catch(err){toast("Gagal menyimpan: "+err.message);}
@@ -350,13 +354,14 @@ function renderExpenses(c){
     <p class="muted tiny">Pilih sumber dana yang benar. Pengeluaran akan mengurangi saldo kategori tersebut dan masuk ke riwayat transaksi.</p>
     <form id="expenseForm"><div class="form-grid">
       <label class="field">Sumber dana<select name="category" required><option value="kas">Kas RT</option><option value="air">Kas Air</option><option value="sampah">Kas Sampah</option></select></label>
-      <label class="field">Nominal (Rp)<input name="amount" type="number" min="1" step="1" required></label>
+      <label class="field">Nominal (Rp)<input name="amount" type="text" inputmode="numeric" data-rupiah placeholder="Rp 0" required></label>
       <label class="field">Tanggal<input name="date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
       <label class="field full-row">Keterangan pengeluaran<input name="description" maxlength="180" placeholder="Contoh: pembelian perlengkapan kebersihan" required></label>
       <label class="field full-row">Bukti / nomor kuitansi / tautan bukti<input name="proof" maxlength="500" placeholder="Nomor kuitansi atau tautan foto bukti" required></label>
     </div><button class="btn primary" type="submit">Simpan pengeluaran</button></form>
   </div>
   <div class="panel" style="margin-top:14px"><h3>Riwayat pengeluaran</h3><div id="expenseHistory" class="table-wrap">Memuat…</div></div>`;
+  bindRupiahInputs($("#expenseForm"));
   const drawHistory=async()=>{
     const rows=Object.values(await getExpenses()||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
     $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(({kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"})[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada pengeluaran.</td></tr>'}</tbody></table>`;
@@ -366,7 +371,7 @@ function renderExpenses(c){
     e.preventDefault(); const f=new FormData(e.currentTarget); const button=e.currentTarget.querySelector('button[type="submit"]');
     button.disabled=true; button.textContent="Menyimpan…";
     try{
-      await createExpense({category:f.get("category"),amount:f.get("amount"),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
+      await createExpense({category:f.get("category"),amount:parseRupiah(f.get("amount")),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
       toast("Pengeluaran berhasil disimpan dan saldo kategori diperbarui.");
       e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); await drawHistory();
     }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
