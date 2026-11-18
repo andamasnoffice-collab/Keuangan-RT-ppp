@@ -1,6 +1,6 @@
 import { ref, push, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod } from "./data.js";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod } from "./data.js?v=20261118-arrears-ledger1";
 
 const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
