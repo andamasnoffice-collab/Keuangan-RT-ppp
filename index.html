@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <title>Keuangan RT</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div id="appView" class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark small">RT</div><div><b>Keuangan RT</b><small>Administrasi warga</small></div></div>
+      <nav id="sideNav">
+        <button data-page="dashboard" class="nav-item active">▦ <span>Dashboard</span></button>
+        <button data-page="publicBills" class="nav-item">▤ <span>Daftar Tunggakan</span></button>
+        <button data-page="households" class="nav-item">⌂ <span>Rumah & Warga</span></button>
+        <button data-page="payments" class="nav-item">▣ <span>Pembayaran</span></button>
+        <button data-page="deposits" class="nav-item">◈ <span>Deposit Warga</span></button>
+        <button data-page="kas" class="nav-item">◉ <span>Kas RT</span></button>
+        <button data-page="sampah" class="nav-item">♻ <span>Uang Sampah</span></button>
+        <button data-page="air" class="nav-item">≈ <span>Uang Air</span></button>
+        <button data-page="expenses" class="nav-item">↘ <span>Pengeluaran</span></button>
+        <button data-page="transactions" class="nav-item">⇄ <span>Semua Transaksi</span></button>
+        <button data-page="reports" class="nav-item">▤ <span>Laporan</span></button>
+        <button data-page="whatsapp" class="nav-item">◉ <span>WhatsApp Tagihan</span></button>
+        <button data-page="users" class="nav-item">♙ <span>Pengguna</span></button>
+        <button data-page="settings" class="nav-item">⚙ <span>Pengaturan</span></button>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot"></span> Firebase mode <span id="connectionLabel">belum dikonfigurasi</span></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><button id="mobileMenu" class="icon-btn" aria-label="Buka menu">☰</button><div><p class="eyebrow">SISTEM KEUANGAN LINGKUNGAN</p><h2 id="pageTitle">Dashboard</h2></div></div>
+        <div class="user-area"><span id="userLabel">Belum login</span><button id="loginOpenBtn" class="btn primary">Login</button><button id="logoutBtn" class="btn outline hidden">Keluar</button></div>
+      </header>
+      <section id="pageContent" class="content"></section>
+    </main>
+  </div>
+
+
+  <dialog id="loginDialog" class="dialog login-dialog">
+    <form id="loginForm">
+      <button type="button" id="loginCloseBtn" class="dialog-close" aria-label="Tutup">×</button>
+      <div class="brand-mark">RT</div>
+      <p class="eyebrow">AKSES PENGELOLAAN</p>
+      <h3>Login Keuangan RT</h3>
+      <p class="muted tiny">Masuk menggunakan akun yang sudah dibuat di Firebase Authentication.</p>
+      <label class="field">Email<input id="loginEmail" type="email" autocomplete="username" required></label>
+      <label class="field">Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <p id="loginError" class="error" role="alert"></p>
+      <button class="btn primary full" type="submit">Masuk</button>
+    </form>
+  </dialog>
+
+  <dialog id="genericDialog" class="dialog">
+    <form method="dialog"><button class="dialog-close" aria-label="Tutup">×</button></form>
+    <div id="dialogContent"></div>
+  </dialog>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script type="module" src="assets/js/main.js"></script>
+</body>
+</html>

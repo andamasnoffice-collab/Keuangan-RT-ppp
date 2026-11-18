@@ -1,0 +1,62 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "households": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "bills": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "payments": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "deposits": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "deposit_ledger": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "water_readings": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "expenses": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "transactions": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "category_balances": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "whatsapp_notifications": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "audit_logs": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "summaries": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "public_views": {
+      ".read": true,
+      ".write": "auth != null"
+    }
+  }
+}
