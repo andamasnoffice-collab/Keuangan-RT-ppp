@@ -85,6 +85,10 @@
     "arrearsLedger": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "water_import_runs": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
