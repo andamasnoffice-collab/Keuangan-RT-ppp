@@ -356,3 +356,5 @@ th{font-size:10px}
  .dock-action{font-size:8px;min-height:58px}
  .dock-action svg{width:18px;height:18px}
 }
+
+#mobileActionDock.hidden{display:none!important}
