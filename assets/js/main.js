@@ -8,7 +8,7 @@ import { renderWhatsAppPage } from "./whatsapp.js";
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
 const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) || 0;
-const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\\B(?=(\\d{3})+(?!\\d))/g,".");
+const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
 function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 let currentUser=null, currentProfile=null, page="dashboard", households={};
