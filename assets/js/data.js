@@ -52,6 +52,34 @@ export async function applyMonthlySummaryDelta(period, entryId, delta) {
   if(!result.committed) throw new Error("Ringkasan bulanan tidak berhasil diperbarui.");
   return result.snapshot.val();
 }
+export async function setHouseholdArrearPeriod(householdId, period, category, amount) {
+  if(!validPeriod(period)||!["kas","air","sampah"].includes(category)) throw new Error("Periode atau kategori tunggakan tidak valid.");
+  const value=Math.max(0,Number(amount)||0);
+  const ledgerRef=root(`arrearsLedger/${householdId}`);
+  const result=await runTransaction(ledgerRef,current=>{
+    const ledger=current||{};
+    ledger[period]=ledger[period]||{};
+    ledger[period][category]=value;
+    ledger[period].updatedAt=Date.now();
+    return ledger;
+  },{applyLocally:false});
+  if(!result.committed) throw new Error("Gagal memperbarui rincian tunggakan.");
+  const ledger=result.snapshot.val()||{};
+  const totals={kas:0,air:0,sampah:0,total:0,periodCount:0};
+  for(const [month,row] of Object.entries(ledger)){
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) continue;
+    let hasDue=false;
+    for(const cat of ["kas","air","sampah"]){const n=Math.max(0,Number(row?.[cat])||0);totals[cat]+=n;if(n>0)hasDue=true;}
+    if(hasDue)totals.periodCount++;
+  }
+  totals.total=totals.kas+totals.air+totals.sampah;
+  totals.updatedAt=Date.now();
+  await set(root(`arrearsSummary/${householdId}`),totals);
+  return totals;
+}
+export async function getHouseholdArrearLedger(householdId) {
+  return await read(`arrearsLedger/${householdId}`) || {};
+}
 export async function applyArrearsDelta(householdId, entryId, delta) {
   const summaryRef=root(`arrearsSummary/${householdId}`);
   const result=await runTransaction(summaryRef,current=>{
@@ -163,6 +191,7 @@ export async function createMonthlyBills(period, recordedBy) {
         air:{amount:admin,adminAmount:admin,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:admin,status:admin>0?"unpaid":"paid",createdAt:now}
       };
       updates[`bills/${period}/${id}`]=row;
+      updates[`arrearsLedger/${id}/${period}`]={kas,sampah,air:admin,updatedAt:now};
     }
     updates[`billing_runs/${period}/status`]="completed";
     updates[`billing_runs/${period}/completedAt`]=now;
@@ -171,8 +200,9 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
     await update(ref(db),updates);
     for(const [id,row] of Object.entries(updates).filter(([path])=>path.startsWith(`bills/${period}/`))){
-      const total=Number(row.kas?.remaining||0)+Number(row.air?.remaining||0)+Number(row.sampah?.remaining||0);
-      await applyArrearsDelta(id,`bill-${period}`,{kas:Number(row.kas?.remaining)||0,air:Number(row.air?.remaining)||0,sampah:Number(row.sampah?.remaining)||0});
+      await setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining);
+      await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
+      await setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining);
     }
     return {period,householdCount:active.length};
   } catch(error) {
@@ -210,7 +240,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await update(ref(db),updates);
-  await applyArrearsDelta(householdId,`water-${period}`,{air:usageAmount});
+  await setHouseholdArrearPeriod(householdId,period,"air",remaining);
   return reading;
 }
 
