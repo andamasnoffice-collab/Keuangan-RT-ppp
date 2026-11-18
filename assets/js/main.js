@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { login, logout, observeSession } from "./auth.js";
 import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings } from "./data.js";
-import { renderPaymentPage, bindPaymentForm } from "./payments.js";
+import { renderPaymentPage } from "./payments.js";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
 const $ = s => document.querySelector(s);
@@ -33,11 +33,15 @@ observeSession((user,profile)=>{
   $("#loginOpenBtn").classList.toggle("hidden",!!user);
   $("#logoutBtn").classList.toggle("hidden",!user);
   if(user) {
-    document.querySelectorAll(".admin-only").forEach(x=>x.classList.remove("hidden"));
+    document.querySelectorAll("#sideNav [data-page]").forEach(x=>x.classList.remove("hidden"));
     render();
   } else {
-    $("#pageContent").innerHTML = `<div class="panel login-prompt"><div class="brand-mark">RT</div><h3>Selamat datang di Keuangan RT</h3><p class="muted">Silakan login untuk melihat dan mengelola data rumah, tagihan, pembayaran, serta laporan keuangan.</p><button id="promptLoginBtn" class="btn primary">Login untuk melanjutkan</button></div>`;
-    $("#promptLoginBtn").addEventListener("click",()=>$("#loginDialog").showModal());
+    document.querySelectorAll("#sideNav [data-page]").forEach(x=>{
+      x.classList.toggle("hidden", !["dashboard","publicBills"].includes(x.dataset.page));
+    });
+    if(!["dashboard","publicBills"].includes(page)) page="dashboard";
+    document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.page===page));
+    renderGuestPage();
   }
 });
 
