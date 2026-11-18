@@ -25,7 +25,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
     try{
       const {getHouseholdArrearLedger,read}=await import("./data.js");
       const [ledger,dep]=await Promise.all([getHouseholdArrearLedger(id),read(`deposits/${id}`)]);
-      const periods=Object.keys(ledger||{}).filter(p=>/^\\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
+      const periods=Object.keys(ledger||{}).filter(p=>/^\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
       const periodBills=periods.map(period=>({period,categories:ledger[period]||{}}));
       box.innerHTML=`
         <div class="section-head payment-period"><h3>Akumulasi tagihan sampai ${esc(monthKey)}</h3><span class="pill">Deposit otomatis diperhitungkan</span></div>
