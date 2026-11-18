@@ -1,4 +1,5 @@
 import { firebaseConfigured, db } from "./firebase.js";
+import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession } from "./auth.js";
 import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense } from "./data.js";
 import { renderPaymentPage } from "./payments.js";
@@ -8,6 +9,26 @@ const $ = s => document.querySelector(s);
 const money = n => new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 let currentUser=null, currentProfile=null, page="dashboard", households={};
+
+function setFirebaseStatus(state,label){
+  const el=$("#firebaseStatus"),text=$("#connectionLabel");
+  if(!el||!text)return;
+  el.classList.remove("is-online","is-offline","is-checking","is-unconfigured");
+  el.classList.add(state);
+  text.textContent=label;
+}
+if(!firebaseConfigured||!db){
+  setFirebaseStatus("is-unconfigured","Belum dikonfigurasi");
+}else{
+  setFirebaseStatus("is-checking","Menghubungkan Firebase…");
+  onValue(ref(db,".info/connected"),snapshot=>{
+    const connected=snapshot.val()===true;
+    setFirebaseStatus(connected?"is-online":"is-offline",connected?"Firebase Online":"Firebase Offline");
+  },error=>{
+    setFirebaseStatus("is-offline","Firebase Offline");
+    console.error("Firebase connection monitor:",error);
+  });
+}
 
 $("#loginOpenBtn").addEventListener("click",()=>$("#loginDialog").showModal());
 $("#loginCloseBtn").addEventListener("click",()=>$("#loginDialog").close());
