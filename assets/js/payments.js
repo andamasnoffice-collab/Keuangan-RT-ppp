@@ -39,7 +39,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               <div><small>Sisa setelah deposit</small><b class="net-due">${money(net)}</b></div>
             </div>
             <label class="pay-exact"><input type="checkbox" class="pay-exact-check" ${net<=0?"disabled":""}><span><b>Bayar pas</b><small>Isi otomatis sebesar sisa setelah deposit</small></span></label>
-            <label class="field payment-amount-field">Nominal dibayar manual (Rp)<input class="payment-amount" type="number" min="0" step="1" inputmode="numeric" value="0" ${net<=0?"disabled":""}><small class="payment-result">Belum ada pembayaran manual.</small></label>
+            <label class="field payment-amount-field">Nominal dibayar manual (Rp)<input class="payment-amount" type="number" min="0" step="1" inputmode="numeric" value="0"><small class="payment-result">Belum ada pembayaran manual.</small></label>
           </section>`;
         }).join("")}</div>
         <div class="form-grid payment-meta">
@@ -83,7 +83,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         const entries=cards.map(card=>{
           const cat=card.dataset.category,gross=num(card.dataset.gross),deposit=num(card.dataset.deposit),depositUsed=num(card.dataset.depositUsed),net=num(card.dataset.net),cash=num(card.querySelector(".payment-amount").value);
           return {cat,gross,deposit,depositUsed,net,cash,applied:Math.min(cash,net),surplus:Math.max(0,cash-net),remaining:Math.max(0,net-cash)};
-        }).filter(x=>x.gross>0&&(x.depositUsed>0||x.cash>0));
+        }).filter(x=>(x.gross>0||x.cash>0)&&(x.depositUsed>0||x.cash>0));
         if(!entries.length){toast("Tidak ada pembayaran atau penggunaan deposit untuk disimpan.");return;}
         const date=box.querySelector("#paymentDate").value;
         if(!date){toast("Tanggal pembayaran wajib diisi.");return;}
