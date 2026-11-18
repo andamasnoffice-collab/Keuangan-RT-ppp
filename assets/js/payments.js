@@ -1,5 +1,6 @@
 import { ref, push, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
+import { applyMonthlySummaryDelta, applyArrearsDelta } from "./data.js";
 
 const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
@@ -95,7 +96,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           const updates={},timestamp=Date.now();
           const paymentPeriod=String(date).slice(0,7);
           const paymentRef=push(ref(db,`paymentsByMonth/${paymentPeriod}`));
-          const transactionIds=[];
+          const transactionIds=[],summaryDeltas=[];
           let totalCash=0,totalApplied=0,totalDepositUsed=0,totalSurplus=0;
           for(const x of entries){
             const {cat}=x;
@@ -119,6 +120,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               const balance=await read(balancePath)||{};
               updates[balancePath]={...balance,balance:num(balance.balance)+x.applied,income:num(balance.income)+x.applied,updatedAt:timestamp};
               updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:x.applied,householdId:id,referenceId:paymentRef.key,date,description:`Pembayaran ${labels[cat]}`,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+              summaryDeltas.push({id:balanceRef.key,category:cat,amount:x.applied,description:`Pembayaran ${labels[cat]}`});
             }else{
               updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]=null;
             }
@@ -128,6 +130,10 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:monthKey,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           await update(ref(db),updates);
+          for(const item of summaryDeltas) await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
+          const arrearsDelta={kas:0,air:0,sampah:0};
+          for(const x of entries) arrearsDelta[x.cat]-=(x.depositUsed+x.applied);
+          await applyArrearsDelta(id,`payment-${paymentRef.key}`,arrearsDelta);
           toast("Pembayaran tersimpan. Deposit dan sisa tagihan diperbarui.");
           await select.dispatchEvent(new Event("change"));
         }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
