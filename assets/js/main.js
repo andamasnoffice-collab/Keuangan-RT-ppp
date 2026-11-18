@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense } from "./data.js";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading } from "./data.js";
 import { renderPaymentPage } from "./payments.js";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -241,7 +241,36 @@ async function renderDashboard(c){
   <div class="section-head"><h3>Saldo setiap kategori</h3><span class="pill">Periode ${monthKey()}</span></div>
   <div class="grid category-grid">${categoryCard("Kas RT",totals[0].balance,totals[0].income,totals[0].expense,totals[0].deposit)}${categoryCard("Uang Sampah",totals[1].balance,totals[1].income,totals[1].expense,totals[1].deposit)}${categoryCard("Uang Air",totals[2].balance,totals[2].income,totals[2].expense,totals[2].deposit)}</div>
   <div class="section-head"><h3>Catatan penting</h3></div><div class="muted-note">Deposit dipisahkan per kategori dan tidak dapat dipindahkan antar-kategori. Saldo kategori ditampilkan terpisah dari deposit warga.</div>
+  <div class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><button id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div>
   <div class="toolbar" style="margin-top:16px"><button id="publishPublicBtn" class="btn secondary">Perbarui dashboard & daftar tagihan publik</button><span class="tiny muted">Hanya menerbitkan label rumah dan nominal tagihan.</span></div>`;
+  const run=await read(`billing_runs/${monthKey()}`);
+  const runBadge=$("#billingRunBadge"),runButton=$("#createMonthlyBillsBtn"),runMessage=$("#billingRunMessage");
+  if(run?.status==="completed"){
+    runBadge.className="pill success";runBadge.textContent="Sudah dibuat";
+    runButton.disabled=true;runButton.textContent="Tagihan bulan ini sudah dibuat";
+    runMessage.textContent=`Periode ${monthKey()} sudah dibuat untuk ${run.householdCount||0} rumah. Tidak dapat dibuat ulang.`;
+  }else if(run?.status==="processing"){
+    runBadge.className="pill warning";runBadge.textContent="Sedang diproses";
+    runButton.disabled=true;runMessage.textContent="Pembuatan tagihan sedang berlangsung.";
+  }else if(run?.status==="failed"){
+    runBadge.className="pill warning";runBadge.textContent="Perlu dicoba ulang";
+    runMessage.textContent="Percobaan sebelumnya gagal. Tombol dapat digunakan kembali setelah penyebab kegagalan diperiksa.";
+  }else{
+    runBadge.className="pill";runBadge.textContent="Belum dibuat";
+    runMessage.textContent="Klik sekali untuk membuat tagihan penuh bagi semua rumah aktif dan kontrak.";
+  }
+  runButton.addEventListener("click",async()=>{
+    if(!confirm(`Buat tagihan penuh periode ${monthKey()} untuk seluruh rumah aktif dan kontrak? Proses ini hanya dapat berhasil satu kali.`))return;
+    runButton.disabled=true;runButton.textContent="Membuat tagihan…";
+    try{
+      const result=await createMonthlyBills(monthKey(),currentUser?.uid);
+      toast(`Tagihan ${result.period} berhasil dibuat untuk ${result.householdCount} rumah.`);
+      await render();
+    }catch(err){
+      toast("Tagihan tidak dibuat: "+err.message);
+      runButton.disabled=false;runButton.textContent="Buat Tagihan Bulan Ini · "+monthKey();
+    }
+  });
   $("#publishPublicBtn").addEventListener("click", async ()=>{
     try{
       const allBills=await read("bills")||{};
@@ -272,9 +301,48 @@ async function renderDeposits(c){
 }
 async function renderCategory(c,cat){
   const bal=(await read(`category_balances/${cat}`))||{};
-  const bills=await getMonthBills(monthKey());
+  const period=monthKey();
+  const bills=await getMonthBills(period);
   const due=Object.values(bills).reduce((s,h)=>s+Number(h?.[cat]?.remaining||0),0);
-  c.innerHTML=`<div class="grid stats">${card("Saldo operasional",money(bal.balance))}${card("Pemasukan",money(bal.income))}${card("Pengeluaran",money(bal.expense))}${card("Deposit warga",money(bal.deposit))}</div><div class="section-head"><h3>Tagihan belum dibayar · ${monthKey()}</h3><span class="pill warning">${money(due)}</span></div><div class="muted-note">Tagihan dan pembayaran kategori ini dikelola melalui tab Pembayaran. Deposit kategori ini hanya dapat digunakan untuk kategori yang sama.</div>`;
+  const stats=`<div class="grid stats">${card("Saldo operasional",money(bal.balance))}${card("Pemasukan",money(bal.income))}${card("Pengeluaran",money(bal.expense))}${card("Deposit warga",money(bal.deposit))}</div><div class="section-head"><h3>Tagihan belum dibayar · ${period}</h3><span class="pill warning">${money(due)}</span></div>`;
+  if(cat!=="air"){
+    c.innerHTML=stats+`<div class="muted-note">Tagihan dan pembayaran kategori ini dikelola melalui tab Pembayaran. Deposit kategori ini hanya dapat digunakan untuk kategori yang sama.</div>`;
+    return;
+  }
+  const settings=await getBillingSettings();
+  const readings=await read(`water_readings/${period}`)||{};
+  const homes=Object.entries(households).filter(([,h])=>h&&h.status!=="empty"&&h.status!=="inactive").sort((a,b)=>String(a[1].block||"").localeCompare(String(b[1].block||"")));
+  const run=await read(`billing_runs/${period}`);
+  c.innerHTML=stats+`<div class="panel"><div class="section-head" style="margin-top:0"><div><h3>Pencatatan meter air · ${period}</h3><p class="tiny muted">Masukkan angka meter akhir. Pemakaian dan biaya langsung dihitung.</p></div><span class="pill">${Number(settings.waterPerM3||0).toLocaleString("id-ID")} / m³</span></div>${!run||run.status!=="completed"?'<div class="muted-note">Buat tagihan bulan ini terlebih dahulu melalui Dashboard sebelum mencatat meter air.</div>':homes.map(([id,h])=>{
+    const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0;
+    const saved=readings[id];
+    return `<div class="meter-row" data-house="${id}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
+      <div class="meter-row-head"><b>${escapeHtml(h.block||"Rumah")}</b><span class="muted tiny">Meter awal: ${previous.toLocaleString("id-ID")} m³</span></div>
+      ${saved? `<div class="meter-saved"><b>Sudah dicatat</b> · Akhir ${saved.currentMeter} m³ · Pemakaian ${saved.usage} m³ · ${money(saved.totalAmount)}</div>`:`<label class="field">Angka meter akhir (m³)<input class="meter-current" type="number" min="${previous}" step="0.001" inputmode="decimal" placeholder="Masukkan angka meter"></label><div class="meter-calc"><span>Pemakaian: <b class="meter-usage">0 m³</b></span><span>Perkiraan tagihan: <b class="meter-total">${money(Number(settings.waterAdmin)||0)}</b></span></div><button class="btn primary meter-save" type="button">Simpan meter air</button>`}
+    </div>`;
+  }).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}</div>`;
+  c.querySelectorAll(".meter-row").forEach(row=>{
+    const input=row.querySelector(".meter-current");if(!input)return;
+    const previous=Number(row.dataset.previous),rate=Number(row.dataset.rate),admin=Number(row.dataset.admin);
+    const updatePreview=()=>{
+      const current=Number(input.value),valid=input.value!==""&&Number.isFinite(current)&&current>=previous;
+      const usage=valid?current-previous:0;
+      row.querySelector(".meter-usage").textContent=usage.toLocaleString("id-ID")+" m³";
+      row.querySelector(".meter-total").textContent=money(admin+Math.round(usage*rate));
+      row.querySelector(".meter-save").disabled=!valid;
+      input.setCustomValidity(input.value!==""&&current<previous?"Meter akhir tidak boleh lebih kecil dari meter awal.":"");
+    };
+    input.addEventListener("input",updatePreview);
+    row.querySelector(".meter-save").addEventListener("click",async()=>{
+      if(!input.reportValidity())return;
+      const button=row.querySelector(".meter-save");button.disabled=true;button.textContent="Menyimpan…";
+      try{
+        const result=await saveWaterReading({period,householdId:row.dataset.house,currentMeter:input.value,recordedBy:currentUser?.uid});
+        toast(`Meter ${result.usage} m³ tersimpan. Tagihan air ${money(result.totalAmount)}.`);
+        await render();
+      }catch(err){toast("Gagal menyimpan meter: "+err.message);button.disabled=false;button.textContent="Simpan meter air";}
+    });
+  });
 }
 function renderExpenses(c){
   c.innerHTML=`<div class="panel">
