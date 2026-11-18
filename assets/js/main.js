@@ -7,6 +7,8 @@ import { renderWhatsAppPage } from "./whatsapp.js";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
+const blockCollator=new Intl.Collator("id",{numeric:true,sensitivity:"base"});
+const compareBlocks=(a,b)=>blockCollator.compare(String(a||"").trim(),String(b||"").trim());
 const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) || 0;
 const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
 function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
@@ -216,7 +218,7 @@ function formatPublicDate(value){
 
 async function renderPublicBills(c, authenticated){
   const rows=await read("public_views/allOutstanding")||{};
-  const list=Object.values(rows).sort((a,b)=>(a.label||"").localeCompare(b.label||""));
+  const list=Object.values(rows).sort((a,b)=>compareBlocks(a.label,b.label));
   const totals=list.reduce((acc,x)=>{
     acc.kas+=Number(x.kas)||0; acc.sampah+=Number(x.sampah)||0; acc.air+=Number(x.air)||0; acc.total+=Number(x.total)||0;
     return acc;
@@ -301,7 +303,7 @@ async function renderDashboard(c){
   });
 }
 function renderHouseholds(c){
-  const rows=Object.entries(households).map(([id,h])=>({...h,id})).sort((a,b)=>(a.block||"").localeCompare(b.block||""));
+  const rows=Object.entries(households).map(([id,h])=>({...h,id})).sort((a,b)=>compareBlocks(a.block,b.block));
   c.innerHTML=`<div class="household-tools"><div class="toolbar"><input id="houseSearch" class="search-input" placeholder="Cari blok, alamat, nama kepala keluarga"><button id="addHouse" class="btn primary">+ Tambah rumah</button></div><div class="toolbar household-import-actions"><button id="downloadHouseTemplate" class="btn secondary">↓ Export Template Excel</button><label class="btn outline file-button" for="houseImportFile">↑ Impor Excel / CSV</label><input id="houseImportFile" type="file" accept=".xlsx,.xls,.csv" hidden></div></div><div id="houseImportPreview"></div><div class="section-head"><h3>Daftar rumah (${rows.length})</h3><span class="pill">Master data warga</span></div><div class="table-wrap"><table><thead><tr><th>Blok / No. Rumah</th><th>Kepala keluarga</th><th>Alamat</th><th>Anggota</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="houseRows">${rows.map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Belum ada data rumah.</td></tr>'}</tbody></table></div>`;
   const draw=filter=>{$("#houseRows").innerHTML=rows.filter(h=>`${h.block} ${h.address} ${h.headName}`.toLowerCase().includes(filter.toLowerCase())).map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Tidak ada rumah yang cocok.</td></tr>';};
   $("#houseSearch").addEventListener("input",e=>draw(e.target.value));
@@ -471,7 +473,7 @@ function normalizeWaterImportRows(matrix){
 }
 async function renderWaterMeters(c){
   const period=monthKey(),settings=await getBillingSettings(),readings=await read(`water_readings/${period}`)||{},run=await read(`billing_runs/${period}`);
-  const homes=Object.entries(households).filter(([,h])=>h&&h.status!=="empty"&&h.status!=="inactive").sort((a,b)=>String(a[1].block||"").localeCompare(String(b[1].block||"")));
+  const homes=Object.entries(households).filter(([,h])=>h&&h.status!=="empty"&&h.status!=="inactive").sort((a,b)=>compareBlocks(a[1].block,b[1].block));
   const recorded=homes.filter(([id])=>!!readings[id]).length;
   c.innerHTML=`<div class="grid stats">${card("Rumah aktif",homes.length,"Dihuni dan kontrak")}${card("Meter tercatat",recorded,"Periode "+period)}${card("Belum tercatat",homes.length-recorded,"Menunggu pencatatan meter")}</div>
   <div class="panel water-meter-panel">
