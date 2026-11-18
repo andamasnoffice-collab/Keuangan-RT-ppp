@@ -27,13 +27,13 @@
         <button data-page="users" class="nav-item">♙ <span>Pengguna</span></button>
         <button data-page="settings" class="nav-item">⚙ <span>Pengaturan</span></button>
       </nav>
-      <div class="sidebar-foot"><span class="status-dot"></span> Firebase mode <span id="connectionLabel">belum dikonfigurasi</span></div>
+
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div><button id="mobileMenu" class="icon-btn" aria-label="Buka menu">☰</button><div><p class="eyebrow">SISTEM KEUANGAN LINGKUNGAN</p><h2 id="pageTitle">Dashboard</h2></div></div>
-        <div class="user-area"><span id="userLabel">Belum login</span><button id="loginOpenBtn" class="btn primary">Login</button><button id="logoutBtn" class="btn outline hidden">Keluar</button></div>
+        <div class="user-area"><div id="firebaseStatus" class="firebase-status is-checking" role="status" aria-live="polite"><span class="firebase-status-dot"></span><span id="connectionLabel">Menghubungkan Firebase…</span></div><span id="userLabel">Belum login</span><button id="loginOpenBtn" class="btn primary">Login</button><button id="logoutBtn" class="btn outline hidden">Keluar</button></div>
       </header>
       <section id="pageContent" class="content"></section>
     </main>
