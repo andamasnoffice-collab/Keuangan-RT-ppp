@@ -337,17 +337,22 @@ th{font-size:10px}
 @media(max-width:600px){.house-actions{flex-direction:column}.house-ledger-filter{align-items:stretch}.house-ledger-filter .btn{align-self:end}}
 
 
-/* Mobile-only manager shortcuts on the logged-in dashboard */
-.mobile-quick-actions{display:none}
+
+/* Floating mobile action dock for logged-in managers */
+.mobile-action-dock{display:none}
 @media(max-width:760px){
- .mobile-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:13px 0 20px}
- .quick-action{display:flex;align-items:center;gap:9px;min-width:0;text-align:left;padding:12px 10px;border:1px solid #dce7ee;border-radius:14px;background:#fff;box-shadow:0 3px 10px rgba(16,42,67,.045);color:var(--text)}
- .quick-action-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:11px}
- .quick-action-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
- .quick-pay .quick-action-icon{background:#e8f1ff;color:#2864a3}
- .quick-water .quick-action-icon{background:#e3f6f2;color:#128477}
- .quick-action b{display:block;font-size:12px;line-height:1.2}
- .quick-action small{display:block;margin-top:4px;font-size:9px;line-height:1.25;color:var(--muted)}
- .quick-arrow{margin-left:auto;font-size:21px;color:#8ba0ae}
+ .mobile-action-dock{position:fixed;z-index:30;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:8px;background:rgba(13,35,53,.96);border:1px solid rgba(255,255,255,.12);border-radius:20px;box-shadow:0 9px 28px rgba(5,22,36,.28);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+ .dock-action{display:flex;min-width:0;min-height:62px;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:7px 3px;border:1px solid rgba(255,255,255,.08);border-radius:13px;background:#18364d;color:#dce9f1;font-size:9px;font-weight:750;line-height:1.15;white-space:normal}
+ .dock-action svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+ .dock-billing{background:#f1a52a;color:#182b3a;border-color:#ffc45e}
+ .dock-payment{background:#1676b8;color:#fff;border-color:#3b9bdd}
+ .dock-water{background:#078b80;color:#fff;border-color:#35b7aa}
+ .dock-publish{background:#e1f3ed;color:#08735b;border-color:#b7e6d6}
+ .content{padding-bottom:112px}
+ .dashboard-billing-actions{display:none!important}
 }
-@media(max-width:360px){.mobile-quick-actions{grid-template-columns:1fr}.quick-action{padding:10px 12px}}
+@media(max-width:370px){
+ .mobile-action-dock{left:6px;right:6px;gap:4px;padding:6px}
+ .dock-action{font-size:8px;min-height:58px}
+ .dock-action svg{width:18px;height:18px}
+}
