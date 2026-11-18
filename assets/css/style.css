@@ -295,3 +295,32 @@ th{font-size:10px}
  .import-preview .stat .value{font-size:16px}
 }
 @media(max-width:390px){.household-import-actions{grid-template-columns:1fr}}
+
+
+/* Distinct payment category cards */
+.payment-categories{gap:14px}
+.payment-category{position:relative;overflow:hidden;border:1px solid var(--pay-border,#dce6ee);border-top:4px solid var(--pay-accent,#3977a8);border-radius:16px;background:linear-gradient(155deg,var(--pay-soft,#f3f8fc) 0%,#fff 44%);box-shadow:0 5px 16px rgba(23,43,59,.045);padding:17px;transition:box-shadow .18s,transform .18s}
+.payment-category:hover{box-shadow:0 9px 22px rgba(23,43,59,.08);transform:translateY(-1px)}
+.payment-category[data-category="kas"]{--pay-accent:#3478bd;--pay-soft:#edf5ff;--pay-border:#cfe0f3;--pay-ink:#204f7d;--pay-tint:#e5f0fc}
+.payment-category[data-category="air"]{--pay-accent:#159b91;--pay-soft:#eaf9f7;--pay-border:#c6e9e5;--pay-ink:#116b65;--pay-tint:#e0f4f1}
+.payment-category[data-category="sampah"]{--pay-accent:#d28a27;--pay-soft:#fff7e9;--pay-border:#f0dfbf;--pay-ink:#875516;--pay-tint:#fff0d7}
+.payment-category-head{align-items:center;margin-bottom:12px}
+.payment-category-head>div{display:flex;align-items:center;gap:10px}
+.payment-category-head h4{display:flex;align-items:center;gap:9px;color:var(--pay-ink);font-size:15px}
+.payment-category-head h4:before{display:grid;place-items:center;content:"";width:34px;height:34px;border-radius:11px;background:var(--pay-tint);color:var(--pay-ink);font-size:17px;font-weight:800;flex:0 0 34px}
+.payment-category[data-category="kas"] .payment-category-head h4:before{content:"$"}
+.payment-category[data-category="air"] .payment-category-head h4:before{content:"≈"}
+.payment-category[data-category="sampah"] .payment-category-head h4:before{content:"♻"}
+.payment-category-head strong{color:var(--pay-ink);font-size:18px}
+.payment-metrics{background:var(--pay-tint);border:1px solid var(--pay-border);border-radius:12px;padding:12px}
+.payment-metrics b{color:var(--pay-ink)}
+.payment-category .pay-exact{border-top-color:var(--pay-border)}
+.payment-category .pay-exact input{accent-color:var(--pay-accent)}
+.payment-category .payment-amount-field input:focus{border-color:var(--pay-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--pay-accent) 14%,transparent)}
+.payment-category .payment-result{line-height:1.4}
+@media(max-width:760px){
+ .payment-categories{gap:11px}
+ .payment-category{padding:14px;border-radius:13px}
+ .payment-category-head h4{font-size:14px}
+ .payment-category-head strong{font-size:17px}
+}
