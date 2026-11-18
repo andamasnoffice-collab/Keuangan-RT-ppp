@@ -272,3 +272,26 @@ th{font-size:10px}
 .announcement-heading h3{margin:3px 0 0;font-size:16px;color:#593f17}
 .announcement-message{font-size:13px;line-height:1.7;color:#5e4b2e;white-space:normal;overflow-wrap:anywhere;margin-bottom:10px}
 @media(max-width:760px){.announcement-editor{padding:13px}.announcement-editor .toolbar{align-items:flex-start;flex-direction:column}.announcement-editor .toolbar .btn{width:100%}.public-announcement{padding:14px}.announcement-message{font-size:12px}}
+
+
+/* Household bulk import and template controls */
+.household-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.household-import-actions{display:flex;align-items:center;gap:8px}
+.file-button{display:inline-flex;align-items:center;cursor:pointer}
+.import-preview{margin:14px 0;padding:15px;border:1px solid #d9e6eb;background:#fff}
+.import-preview .stats{grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0}
+.import-preview .stat{padding:11px}
+.import-preview .stat .value{font-size:19px}
+.import-preview table{min-width:650px}
+.import-preview .btn{margin:10px 8px 0 0}
+@media(max-width:760px){
+ .household-tools{align-items:stretch}
+ .household-tools>.toolbar:first-child{width:100%}
+ .household-import-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}
+ .household-import-actions .btn{justify-content:center;text-align:center;padding:10px 7px;font-size:11px}
+ .import-preview{padding:11px}
+ .import-preview .stats{gap:6px}
+ .import-preview .stat{padding:8px}
+ .import-preview .stat .value{font-size:16px}
+}
+@media(max-width:390px){.household-import-actions{grid-template-columns:1fr}}
