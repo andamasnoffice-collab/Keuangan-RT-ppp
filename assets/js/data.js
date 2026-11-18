@@ -43,7 +43,7 @@ export async function createMonthlyBills(period, recordedBy) {
   if (!validPeriod(period)) throw new Error("Periode tagihan tidak valid.");
   const lockRef=root(`billing_runs/${period}`);
   const claim=await runTransaction(lockRef,current=>{
-    if(current) return;
+    if(current && current.status!=="failed") return;
     return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null};
   },{applyLocally:false});
   if(!claim.committed) {
