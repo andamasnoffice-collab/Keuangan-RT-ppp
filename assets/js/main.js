@@ -93,7 +93,8 @@ async function render(){
     else if(page==="reports") await renderReports(c);
     else if(page==="whatsapp") await renderWhatsAppPage(c,{households,currentUser,currentProfile,toast});
     else if(page==="users") c.innerHTML='<div class="muted-note">Semua akun yang berhasil login memiliki hak pengelolaan yang sama. Penambahan akun dilakukan melalui Firebase Authentication oleh pemilik proyek.</div>';
-    else if(page==="settings") await renderSettings(c);\n    else if(page==="masterData") renderMasterData(c);
+    else if(page==="settings") await renderSettings(c);
+    else if(page==="masterData") renderMasterData(c);
   }catch(e){c.innerHTML=`<div class="muted-note">Gagal memuat data: ${e.message}</div>`;}
 }
 async function renderSettings(c){
