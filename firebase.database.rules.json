@@ -73,6 +73,14 @@
     "paymentsByMonth": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "financeSummaryByMonth": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "arrearsSummary": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
