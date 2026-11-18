@@ -343,7 +343,7 @@ function normalizeWaterImportRows(matrix){
   const ix={block:find(["blok","no. rumah"]),name:find(["nama kepala","nama"]),previous:find(["meter september","meteran september","meter awal"]),current:find(["meter oktober","meteran oktober","meter akhir"]),usage:find(["pemakaian","jml"]),amount:find(["tagihan oktober","tagihan air","nominal tagihan","tagihan (rp)"])};
   if(ix.block<0)throw new Error("Kolom Blok tidak ditemukan. Gunakan file template impor Keuangan RT.");
   return matrix.slice(1).filter(r=>String(r[ix.block]??"").trim()).map(r=>{
-    const num=i=>{if(i<0||r[i]===undefined||r[i]===null||String(r[i]).trim()==="")return null;const v=Number(String(r[i]).replace(/[^0-9,.-]/g,"").replace(/\\.(?=\\d{3}(?:\\D|$))/g,"").replace(",", "."));return Number.isFinite(v)?v:null;};
+    const num=i=>{if(i<0||r[i]===undefined||r[i]===null||String(r[i]).trim()==="")return null;const v=Number(String(r[i]).replace(/[^0-9,-]/g,"").replace(",", "."));return Number.isFinite(v)?v:null;};
     return {block:String(r[ix.block]).trim(),headName:ix.name>=0?String(r[ix.name]??"").trim():"",previousMeter:num(ix.previous),currentMeter:num(ix.current),usage:num(ix.usage),amount:num(ix.amount)};
   });
 }
