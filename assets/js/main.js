@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions, migrateMonthlyIndexes } from "./data.js";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions } from "./data.js";
 import { renderPaymentPage } from "./payments.js";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -128,17 +128,7 @@ async function renderSettings(c){
     catch(err){toast("Gagal menyimpan: "+err.message);}
     finally{button.disabled=false;button.textContent="Simpan pengaturan tarif";}
   });
-  const migration=await read("settings/monthlyIndexMigration");
-  const migrationPanel=document.createElement("div");migrationPanel.className="panel";migrationPanel.style.marginTop="14px";
-  migrationPanel.innerHTML=`<h3>Optimasi arsip transaksi</h3><p class="muted tiny">Membuat indeks per bulan untuk transaksi, pengeluaran, dan pembayaran lama. Proses ini hanya dilakukan sekali. Data asli tidak dihapus.</p><p class="tiny muted" id="indexMigrationStatus">${migration?.status==="completed"?"Indeks bulanan sudah dibuat.":migration?.status==="processing"?"Migrasi sedang berjalan.":"Belum dijalankan."}</p><button id="migrateMonthlyIndexes" class="btn secondary" ${migration?.status==="completed"||migration?.status==="processing"?"disabled":""}>${migration?.status==="completed"?"Migrasi selesai":migration?.status==="processing"?"Sedang diproses":"Buat indeks arsip bulanan (sekali)"}</button>`;
-  c.appendChild(migrationPanel);
-  $("#migrateMonthlyIndexes").addEventListener("click",async()=>{
-    const button=$("#migrateMonthlyIndexes");
-    if(!confirm("Indeks bulanan akan dibuat dari arsip transaksi lama. Proses ini membaca arsip lama satu kali dan tidak menghapus data asli. Lanjutkan?"))return;
-    button.disabled=true;button.textContent="Memproses arsip…";
-    try{const result=await migrateMonthlyIndexes(currentUser?.uid);$("#indexMigrationStatus").textContent=`Selesai: ${result.counts.transactions} transaksi, ${result.counts.expenses} pengeluaran, ${result.counts.payments} pembayaran diindeks.`;button.textContent="Migrasi selesai";toast("Indeks arsip bulanan berhasil dibuat.");}
-    catch(err){$("#indexMigrationStatus").textContent="Migrasi gagal: "+err.message;button.disabled=false;button.textContent="Coba migrasi lagi";toast("Migrasi gagal: "+err.message);}
-  });
+
 }
 
 async function renderGuestPage(){
