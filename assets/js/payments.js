@@ -3,7 +3,9 @@ import { db } from "./firebase.js";
 
 const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
-const money=n=>new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
+const money=n=>"Rp "+new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
+const parseRupiah=value=>Number(String(value??"").replace(/[^0-9-]/g,""))||0;
+const formatRupiahInput=value=>String(value??"").replace(/[^0-9]/g,"").replace(/\\B(?=(\\d{3})+(?!\\d))/g,".");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=n=>Math.max(0,Number(n)||0);
 
@@ -39,7 +41,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               <div><small>Sisa setelah deposit</small><b class="net-due">${money(net)}</b></div>
             </div>
             <label class="pay-exact"><input type="checkbox" class="pay-exact-check" ${net<=0?"disabled":""}><span><b>Bayar pas</b><small>Isi otomatis sebesar sisa setelah deposit</small></span></label>
-            <label class="field payment-amount-field">Nominal dibayar manual (Rp)<input class="payment-amount" type="number" min="0" step="1" inputmode="numeric" value="0"><small class="payment-result">Belum ada pembayaran manual.</small></label>
+            <label class="field payment-amount-field">Nominal dibayar manual (Rp)<input class="payment-amount" type="text" inputmode="numeric" data-rupiah value="0"><small class="payment-result">Belum ada pembayaran manual.</small></label>
           </section>`;
         }).join("")}</div>
         <div class="form-grid payment-meta">
@@ -56,6 +58,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         </div>
         <p class="muted-note payment-note">Deposit otomatis mengurangi tagihan kategori yang sama. Jika pembayaran manual melebihi sisa tagihan, kelebihannya masuk deposit kategori tersebut. Deposit tidak dapat dipindahkan antar-kategori.</p>
         <button id="savePayment" class="btn primary full" type="button">Simpan pembayaran</button>`;
+      box.querySelectorAll("input[data-rupiah]").forEach(input=>{input.addEventListener("input",()=>{input.value=formatRupiahInput(input.value);});});
       const cards=[...box.querySelectorAll(".payment-category")];
       const calculate=()=>{
         let gross=0,depositUsed=0,cash=0,surplus=0,short=0;
@@ -63,7 +66,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           const due=num(card.dataset.net),depUsed=num(card.dataset.depositUsed);
           const input=card.querySelector(".payment-amount"),check=card.querySelector(".pay-exact-check");
           if(check.checked) input.value=String(due);
-          const paid=num(input.value),applied=Math.min(paid,due),extra=Math.max(0,paid-due),remaining=Math.max(0,due-paid);
+          const paid=parseRupiah(input.value),applied=Math.min(paid,due),extra=Math.max(0,paid-due),remaining=Math.max(0,due-paid);
           card.querySelector(".payment-result").textContent=extra>0?`Lebih bayar menjadi deposit: ${money(extra)}`:remaining>0?`Kurang bayar: ${money(remaining)}`:due===0?"Tidak ada pembayaran manual yang diperlukan.":"Tagihan kategori ini lunas.";
           gross+=num(card.dataset.gross);depositUsed+=depUsed;cash+=paid;surplus+=extra;short+=remaining;
         });
@@ -81,7 +84,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       box.querySelector("#savePayment").addEventListener("click",async()=>{
         const button=box.querySelector("#savePayment");
         const entries=cards.map(card=>{
-          const cat=card.dataset.category,gross=num(card.dataset.gross),deposit=num(card.dataset.deposit),depositUsed=num(card.dataset.depositUsed),net=num(card.dataset.net),cash=num(card.querySelector(".payment-amount").value);
+          const cat=card.dataset.category,gross=num(card.dataset.gross),deposit=num(card.dataset.deposit),depositUsed=num(card.dataset.depositUsed),net=num(card.dataset.net),cash=parseRupiah(card.querySelector(".payment-amount").value);
           return {cat,gross,deposit,depositUsed,net,cash,applied:Math.min(cash,net),surplus:Math.max(0,cash-net),remaining:Math.max(0,net-cash)};
         }).filter(x=>(x.gross>0||x.cash>0)&&(x.depositUsed>0||x.cash>0));
         if(!entries.length){toast("Tidak ada pembayaran atau penggunaan deposit untuk disimpan.");return;}
