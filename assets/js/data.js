@@ -30,10 +30,10 @@ export async function getMonthBills(monthKey) {
   return await read(`bills/${monthKey}`) || {};
 }
 export async function getPayments(period=null) {
-  return period ? await read(`paymentsByMonth/${period}`) || {} : await read("payments") || {};
+  return period ? await read(`paymentsByMonth/${period}`) || {} : await read("paymentsByMonth") || {};
 }
 export async function getExpenses(period=null) {
-  return period ? await read(`expensesByMonth/${period}`) || {} : await read("expenses") || {};
+  return period ? await read(`expensesByMonth/${period}`) || {} : await read("expensesByMonth") || {};
 }
 export async function getMonthTransactions(period) {
   if(!validPeriod(period)) throw new Error("Periode transaksi tidak valid.");
@@ -206,8 +206,10 @@ export async function createExpense({category, amount, date, description, proof,
   if (!Number.isFinite(value) || value <= 0) throw new Error("Nominal pengeluaran harus lebih dari nol.");
   if (!String(description||"").trim()) throw new Error("Keterangan pengeluaran wajib diisi.");
   if (!String(proof||"").trim()) throw new Error("Bukti pengeluaran wajib diisi.");
-  const expenseRef = push(root("expenses"));
-  const txRef = push(root("transactions"));
+  const period=String(date || new Date().toISOString().slice(0,10)).slice(0,7);
+  if(!validPeriod(period)) throw new Error("Tanggal pengeluaran tidak valid.");
+  const expenseRef = push(root(`expensesByMonth/${period}`));
+  const txRef = push(root(`transactionsByMonth/${period}`));
   const balSnap = await get(root(`category_balances/${category}`));
   const balance = balSnap.exists() ? balSnap.val() : {};
   const currentBalance = Number(balance.balance) || 0;
@@ -215,11 +217,8 @@ export async function createExpense({category, amount, date, description, proof,
   const timestamp = Date.now();
   const record = {id:expenseRef.key, category, amount:value, date:date || new Date().toISOString().slice(0,10), description:String(description).trim(), proof:String(proof).trim(), recordedBy:recordedBy || null, createdAt:timestamp};
   const updates = {};
-  updates[`expenses/${expenseRef.key}`] = record;
-  updates[`transactions/${txRef.key}`] = {...record, id:txRef.key, type:"expense", referenceId:expenseRef.key};
-  const period=String(record.date).slice(0,7);
-  updates[`expensesByMonth/${period}/${expenseRef.key}`]=record;
-  updates[`transactionsByMonth/${period}/${txRef.key}`]={...record,id:txRef.key,type:"expense",referenceId:expenseRef.key};
+  updates[`expensesByMonth/${period}/${expenseRef.key}`] = record;
+  updates[`transactionsByMonth/${period}/${txRef.key}`] = {...record, id:txRef.key, type:"expense", referenceId:expenseRef.key};
   updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
@@ -290,7 +289,8 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
     return financeByMonth[month];
   };
 
-  for (const [id, tx] of Object.entries(transactions || {})) {
+  const transactionRows=Object.entries(transactions||{}).flatMap(([key,value])=>value&&typeof value==="object"&&!value.type&&!value.amount?Object.entries(value).map(([id,row])=>[id,row]):[[key,value]]);
+  for (const [id, tx] of transactionRows) {
     const type = String(tx?.type || tx?.direction || tx?.kind || "").toLowerCase();
     if (!/(income|pemasukan|payment|pembayaran|setoran)/.test(type) || /(expense|pengeluaran)/.test(type)) continue;
     const month = monthOf(tx.date || tx.createdAt || tx.timestamp);
@@ -303,7 +303,8 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
     bucket.totals.income += amount;
   }
 
-  for (const [id, expense] of Object.entries(expenses || {})) {
+  const expenseRows=Object.entries(expenses||{}).flatMap(([key,value])=>value&&typeof value==="object"&&!value.amount?Object.entries(value).map(([id,row])=>[id,row]):[[key,value]]);
+  for (const [id, expense] of expenseRows) {
     const month = monthOf(expense?.date || expense?.createdAt || expense?.timestamp);
     const bucket = ensureMonth(month);
     if (!bucket) continue;
