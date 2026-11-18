@@ -75,7 +75,7 @@ function card(label,value,sub=""){return `<div class="stat"><div class="label">$
 function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
-  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",households:"Rumah & Warga",payments:"Pembayaran",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan"};
+  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",households:"Rumah & Warga",payments:"Pembayaran",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan"};
   title(names[page]||"Dashboard");
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
@@ -87,6 +87,7 @@ async function render(){
     else if(page==="payments") await renderPaymentPage(c,{households,monthKey:monthKey(),money,toast,currentUser});
     else if(page==="deposits") await renderDeposits(c);
     else if(["kas","sampah","air"].includes(page)) await renderCategory(c,page);
+    else if(page==="waterMeters") await renderWaterMeters(c);
     else if(page==="expenses") renderExpenses(c);
     else if(page==="transactions") await renderTransactions(c);
     else if(page==="reports") await renderReports(c);
@@ -286,22 +287,56 @@ async function renderDashboard(c){
   });
 }
 function renderHouseholds(c){
-  const rows=Object.values(households).sort((a,b)=>(a.block||"").localeCompare(b.block||""));
-  c.innerHTML=`<div class="toolbar"><input id="houseSearch" class="search-input" placeholder="Cari blok, alamat, nama kepala keluarga"><button id="addHouse" class="btn primary">+ Tambah rumah</button></div><div class="section-head"><h3>Daftar rumah (${rows.length})</h3></div><div class="table-wrap"><table><thead><tr><th>Blok / No. Rumah</th><th>Kepala keluarga</th><th>Alamat</th><th>Anggota</th><th>Status</th></tr></thead><tbody id="houseRows">${rows.map(h=>houseRow(h)).join("")||'<tr><td colspan="5" class="empty">Belum ada data rumah.</td></tr>'}</tbody></table></div>`;
-  $("#houseSearch").addEventListener("input",e=>{$("#houseRows").innerHTML=rows.filter(h=>`${h.block} ${h.address} ${h.headName}`.toLowerCase().includes(e.target.value.toLowerCase())).map(h=>houseRow(h)).join("");});
+  const rows=Object.entries(households).map(([id,h])=>({...h,id})).sort((a,b)=>(a.block||"").localeCompare(b.block||""));
+  c.innerHTML=`<div class="toolbar"><input id="houseSearch" class="search-input" placeholder="Cari blok, alamat, nama kepala keluarga"><button id="addHouse" class="btn primary">+ Tambah rumah</button></div><div class="section-head"><h3>Daftar rumah (${rows.length})</h3></div><div class="table-wrap"><table><thead><tr><th>Blok / No. Rumah</th><th>Kepala keluarga</th><th>Alamat</th><th>Anggota</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="houseRows">${rows.map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Belum ada data rumah.</td></tr>'}</tbody></table></div>`;
+  const draw=filter=>{$("#houseRows").innerHTML=rows.filter(h=>`${h.block} ${h.address} ${h.headName}`.toLowerCase().includes(filter.toLowerCase())).map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Tidak ada rumah yang cocok.</td></tr>';};
+  $("#houseSearch").addEventListener("input",e=>draw(e.target.value));
   $("#addHouse").addEventListener("click",()=>houseDialog());
+  $("#houseRows").addEventListener("click",e=>{const b=e.target.closest("[data-edit-house]");if(!b)return;const h=rows.find(x=>x.id===b.dataset.editHouse);if(h)houseDialog(h);});
 }
-function houseRow(h){return `<tr><td><b>${h.block||"-"}</b></td><td>${h.headName||"-"}</td><td>${h.address||"-"}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${h.status||"active"}</span></td></tr>`;}
-function houseDialog(){
-  $("#dialogContent").innerHTML=`<h3>Tambah rumah / keluarga</h3><form id="houseForm"><div class="form-grid"><label class="field">Blok / nomor rumah<input name="block" required></label><label class="field">Nama kepala keluarga<input name="headName" required></label><label class="field full-row">Alamat lengkap<input name="address" required></label><label class="field">Nomor HP<input name="phone"></label><label class="field">Nomor WhatsApp<input name="whatsappNumber" placeholder="Contoh: 081234567890"></label><label class="field">Meteran air awal (m³)<input name="initialWaterMeter" type="number" min="0" step="0.01" value="0" required><small class="muted tiny">Angka meter saat rumah pertama kali didaftarkan.</small></label><label class="field">Status<select name="status"><option value="active">Dihuni</option><option value="empty">Kosong</option><option value="rented">Kontrak</option></select></label><label class="field full-row">Anggota keluarga (satu nama per baris, opsional)<textarea name="members" rows="4" placeholder="Nama - hubungan&#10;Siti - Istri&#10;Budi - Anak"></textarea></label></div><button class="btn primary full">Simpan rumah</button></form>`;
+function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button></td></tr>`;}
+function houseDialog(existing=null){
+  const editing=!!existing;
+  const membersText=Object.entries(existing?.members||{}).filter(([key])=>key!=="head").map(([,v])=>v.name?`${v.name} - ${v.relation||"lainnya"}`:"").filter(Boolean).join("\n");
+  $("#dialogContent").innerHTML=`<h3>${editing?"Edit rumah / keluarga":"Tambah rumah / keluarga"}</h3><form id="houseForm"><div class="form-grid"><label class="field">Blok / nomor rumah<input name="block" value="${escapeHtml(existing?.block||"")}" required></label><label class="field">Nama kepala keluarga<input name="headName" value="${escapeHtml(existing?.headName||"")}" required></label><label class="field full-row">Alamat lengkap<input name="address" value="${escapeHtml(existing?.address||"")}" required></label><label class="field">Nomor HP<input name="phone" value="${escapeHtml(existing?.phone||"")}"></label><label class="field">Nomor WhatsApp<input name="whatsappNumber" value="${escapeHtml(existing?.whatsapp?.primaryNumber||"")}" placeholder="Contoh: 081234567890"></label><label class="field">Meteran air awal (m³)<input name="initialWaterMeter" type="number" min="0" step="0.01" value="${Number(existing?.initialWaterMeter??existing?.currentWaterMeter)||0}" required><small class="muted tiny">${editing?"Ubah hanya jika melakukan koreksi data meter awal.":"Angka meter saat rumah pertama kali didaftarkan."}</small></label><label class="field">Status<select name="status"><option value="active" ${existing?.status==="active"?"selected":""}>Dihuni</option><option value="empty" ${existing?.status==="empty"?"selected":""}>Kosong</option><option value="rented" ${existing?.status==="rented"?"selected":""}>Kontrak</option></select></label><label class="field full-row">Anggota keluarga (satu nama per baris, opsional)<textarea name="members" rows="4" placeholder="Nama - hubungan&#10;Siti - Istri&#10;Budi - Anak">${escapeHtml(membersText)}</textarea></label></div><button class="btn primary full">${editing?"Simpan perubahan":"Simpan rumah"}</button></form>`;
   $("#genericDialog").showModal();
-  $("#houseForm").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.target);const members={};String(f.get("members")||"").split("\n").filter(Boolean).forEach((line,i)=>{const [name,relation]=line.split("-").map(x=>x.trim());members[`m${i+1}`]={name,relation:relation||"lainnya",status:"active"};});members.head={name:f.get("headName"),relation:"kepala_keluarga",status:"active"};await saveHousehold({block:f.get("block"),headName:f.get("headName"),address:f.get("address"),phone:f.get("phone"),whatsapp:{primaryNumber:f.get("whatsappNumber")||f.get("phone")||"",enabled:true},initialWaterMeter:Math.max(0,Number(f.get("initialWaterMeter"))||0),currentWaterMeter:Math.max(0,Number(f.get("initialWaterMeter"))||0),status:f.get("status"),members});$("#genericDialog").close();toast("Data rumah tersimpan.");render();});
+  $("#houseForm").addEventListener("submit",async e=>{
+    e.preventDefault();const f=new FormData(e.target),members={};
+    String(f.get("members")||"").split("\n").map(x=>x.trim()).filter(Boolean).forEach((line,i)=>{const [name,relation]=line.split("-").map(x=>x.trim());members[`m${i+1}`]={name,relation:relation||"lainnya",status:"active"};});
+    members.head={name:f.get("headName"),relation:"kepala_keluarga",status:"active"};
+    const initial= Math.max(0,Number(f.get("initialWaterMeter))||0);
+    const data={...(existing||{}),block:f.get("block").trim(),headName:f.get("headName").trim(),address:f.get("address").trim(),phone:f.get("phone").trim(),whatsapp:{...(existing?.whatsapp||{}),primaryNumber:f.get("whatsappNumber")||f.get("phone")||"",enabled:true},initialWaterMeter:editing?Number(existing.initialWaterMeter??initial):initial,currentWaterMeter:editing?Number(existing.currentWaterMeter??initial):initial,status:f.get("status"),members};
+    if(existing)data.id=existing.id;
+    await saveHousehold(data);$("#genericDialog").close();toast(editing?"Perubahan rumah tersimpan.":"Data rumah tersimpan.");await render();
+  });
 }
+
 async function renderDeposits(c){
   const data=await read("deposits")||{};
   const rows=[];
   Object.entries(data).forEach(([hid,cats])=>Object.entries(cats||{}).forEach(([cat,amount])=>rows.push({hid,cat,amount})));
   c.innerHTML=`<div class="grid stats">${card("Deposit kas",money(rows.filter(x=>x.cat==="kas").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Deposit sampah",money(rows.filter(x=>x.cat==="sampah").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Deposit air",money(rows.filter(x=>x.cat==="air").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Total deposit",money(rows.reduce((s,x)=>s+Number(x.amount||0),0)),"Tidak termasuk saldo operasional")}</div><div class="section-head"><h3>Saldo deposit per rumah</h3></div><div class="table-wrap"><table><thead><tr><th>Rumah</th><th>Kategori</th><th>Saldo deposit</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${households[x.hid]?.block||x.hid}</td><td>${x.cat}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">Belum ada deposit.</td></tr>'}</tbody></table></div><div class="muted-note" style="margin-top:14px">Deposit tidak dapat dipindahkan antar-kategori. Perubahan deposit harus tercatat di deposit ledger dan melalui proses transaksi yang tervalidasi.</div>`;
+}
+async function renderWaterMeters(c){
+  const period=monthKey(),settings=await getBillingSettings(),readings=await read(`water_readings/${period}`)||{},run=await read(`billing_runs/${period}`);
+  const homes=Object.entries(households).filter(([,h])=>h&&h.status!=="empty"&&h.status!=="inactive").sort((a,b)=>String(a[1].block||"").localeCompare(String(b[1].block||"")));
+  const recorded=homes.filter(([id])=>!!readings[id]).length;
+  c.innerHTML=`<div class="grid stats">${card("Rumah aktif",homes.length,"Dihuni dan kontrak")}${card("Meter tercatat",recorded,"Periode "+period)}${card("Belum tercatat",homes.length-recorded,"Hanya beban administrasi air")}</div>
+  <div class="panel"><div class="section-head" style="margin-top:0"><div><h3>Meteran air · ${period}</h3><p class="muted tiny">Masukkan angka meter akhir setiap bulan. Pemakaian dan biaya dihitung langsung.</p></div><span class="pill">${money(settings.waterPerM3||0)} / m³</span></div>
+  ${!run||run.status!=="completed"?'<div class="muted-note">Tagihan bulan ini belum dibuat. Buat tagihan melalui Dashboard terlebih dahulu. Jika meter belum dicatat, kewajiban air hanya berupa administrasi bulanan.</div>':homes.map(([id,h])=>{
+    const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0,saved=readings[id];
+    return `<div class="meter-row" data-house="${escapeHtml(id)}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
+      <div class="meter-row-head"><b>${escapeHtml(h.block||"Rumah")}</b><span class="muted tiny">Meter awal: ${previous.toLocaleString("id-ID")} m³</span></div>
+      ${saved?`<div class="meter-saved"><b>Sudah dicatat</b> · Meter akhir ${saved.currentMeter} m³ · Pemakaian ${saved.usage} m³ · Tagihan ${money(saved.totalAmount)}</div>`:`<label class="field">Angka meter akhir (m³)<input class="meter-current" type="number" min="${previous}" step="0.001" inputmode="decimal" placeholder="Masukkan angka meter"></label><div class="meter-calc"><span>Pemakaian: <b class="meter-usage">0 m³</b></span><span>Perkiraan tagihan: <b class="meter-total">${money(Number(settings.waterAdmin)||0)}</b></span></div><button class="btn primary meter-save" type="button">Simpan meter air</button>`}
+    </div>`;
+  }).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}</div>`;
+  c.querySelectorAll(".meter-row").forEach(row=>{
+    const input=row.querySelector(".meter-current");if(!input)return;
+    const previous=Number(row.dataset.previous),rate=Number(row.dataset.rate),admin=Number(row.dataset.admin);
+    const preview=()=>{const current=Number(input.value),valid=input.value!==""&&Number.isFinite(current)&&current>=previous,usage=valid?current-previous:0;row.querySelector(".meter-usage").textContent=usage.toLocaleString("id-ID")+" m³";row.querySelector(".meter-total").textContent=money(admin+Math.round(usage*rate));row.querySelector(".meter-save").disabled=!valid;input.setCustomValidity(input.value!==""&&current<previous?"Meter akhir tidak boleh lebih kecil dari meter awal.":"");};
+    input.addEventListener("input",preview);
+    row.querySelector(".meter-save").addEventListener("click",async()=>{if(!input.reportValidity())return;const button=row.querySelector(".meter-save");button.disabled=true;button.textContent="Menyimpan…";try{const result=await saveWaterReading({period,householdId:row.dataset.house,currentMeter:input.value,recordedBy:currentUser?.uid});toast(`Meter ${result.usage} m³ tersimpan. Tagihan air ${money(result.totalAmount)}.`);await render();}catch(err){toast("Gagal menyimpan meter: "+err.message);button.disabled=false;button.textContent="Simpan meter air";}});
+  });
 }
 async function renderCategory(c,cat){
   const bal=(await read(`category_balances/${cat}`))||{};
