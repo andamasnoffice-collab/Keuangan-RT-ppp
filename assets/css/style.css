@@ -257,3 +257,18 @@ th{font-size:10px}
 .opening-arrears-saved{display:flex;flex-wrap:wrap;gap:8px 18px;margin:10px 0;font-size:12px;font-weight:700}
 #houseForm input[data-rupiah]{font-variant-numeric:tabular-nums}
 @media(max-width:600px){.opening-arrears-box{padding:11px}.opening-arrears-saved{display:grid;grid-template-columns:1fr 1fr;gap:8px}}
+
+
+/* Public dashboard announcement */
+.announcement-editor{border:1px solid #cfe4e8;background:linear-gradient(135deg,#f7fbfc,#fff)}
+.announcement-editor .field{margin:9px 0}
+.announcement-editor textarea{min-height:100px;resize:vertical;line-height:1.55}
+.announcement-toggle{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:#36546a}
+.announcement-toggle input{width:16px;height:16px;accent-color:#287f78}
+.public-announcement{margin:0 0 18px;border:1px solid #f2d69b;background:linear-gradient(135deg,#fff8e9,#fffdf8);box-shadow:0 5px 18px rgba(145,100,25,.06)}
+.announcement-heading{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.announcement-icon{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:11px;background:#f5bd54;color:#563b0d;font-size:21px;font-weight:850}
+.announcement-heading .eyebrow{color:#9b6a17;font-size:9px;letter-spacing:.13em}
+.announcement-heading h3{margin:3px 0 0;font-size:16px;color:#593f17}
+.announcement-message{font-size:13px;line-height:1.7;color:#5e4b2e;white-space:normal;overflow-wrap:anywhere;margin-bottom:10px}
+@media(max-width:760px){.announcement-editor{padding:13px}.announcement-editor .toolbar{align-items:flex-start;flex-direction:column}.announcement-editor .toolbar .btn{width:100%}.public-announcement{padding:14px}.announcement-message{font-size:12px}}
