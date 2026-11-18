@@ -173,25 +173,47 @@ export async function createMonthlyBills(period, recordedBy) {
     throw new Error("Pembuatan tagihan periode ini sedang diproses atau perlu pemeriksaan pengurus.");
   }
   try {
-    const [homes,settings,existing]=await Promise.all([
-      getHouseholds(),getBillingSettings(),getMonthBills(period)
+    const [homes,settings,existing,deposits,balances]=await Promise.all([
+      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances")
     ]);
     const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
     if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
     if(Object.keys(existing).length) throw new Error("Data tagihan periode ini sudah ada. Proses dihentikan agar tidak menimpa tagihan.");
-    const updates={};
+    const updates={},depositSummary={kas:0,air:0,sampah:0},paymentItems={};
     const now=Date.now();
     for(const [id,h] of active){
-      const kas=Number(settings.kasMonthly)||0;
-      const sampah=Number(settings.sampahMonthly)||0;
-      const admin=Number(settings.waterAdmin)||0;
+      const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
       const row={
-        kas:{amount:kas,paidAmount:0,remaining:kas,status:kas>0?"unpaid":"paid",createdAt:now},
-        sampah:{amount:sampah,paidAmount:0,remaining:sampah,status:sampah>0?"unpaid":"paid",createdAt:now},
-        air:{amount:admin,adminAmount:admin,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:admin,status:admin>0?"unpaid":"paid",createdAt:now}
+        kas:{amount:raw.kas,paidAmount:0,remaining:raw.kas,status:raw.kas>0?"unpaid":"paid",createdAt:now},
+        sampah:{amount:raw.sampah,paidAmount:0,remaining:raw.sampah,status:raw.sampah>0?"unpaid":"paid",createdAt:now},
+        air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
+      const applied={};
+      for(const cat of ["kas","air","sampah"]){
+        const available=Math.max(0,Number(deposits?.[id]?.[cat])||0);
+        const used=Math.min(available,raw[cat]);
+        if(used>0){
+          applied[cat]=used;depositSummary[cat]+=used;
+          row[cat].paidAmount=used;row[cat].remaining=raw[cat]-used;row[cat].depositAppliedAmount=used;
+          row[cat].status=row[cat].remaining===0?"paid":"partial";
+          updates[`deposits/${id}/${cat}`]=available-used;
+          const ledgerRef=push(root("deposit_ledger"));
+          updates[`deposit_ledger/${ledgerRef.key}`]={householdId:id,category:cat,amount:-used,before:available,after:available-used,type:"deposit_auto_applied",date:period+"-01",period,createdAt:now,recordedBy:recordedBy||null};
+        }
+      }
       updates[`bills/${period}/${id}`]=row;
-      updates[`arrearsLedger/${id}/${period}`]={kas,sampah,air:admin,updatedAt:now};
+      updates[`arrearsLedger/${id}/${period}`]={kas:row.kas.remaining,sampah:row.sampah.remaining,air:row.air.remaining,updatedAt:now};
+      if(Object.keys(applied).length){
+        const paymentRef=push(root(`paymentsByMonth/${period}`));
+        const items=Object.entries(applied).map(([cat,amount])=>({cat,cash:0,depositUsed:amount,applied:amount,surplus:0,remaining:row[cat].remaining}));
+        updates[`paymentsByMonth/${period}/${paymentRef.key}`]={id:paymentRef.key,type:"automatic_deposit_application",householdId:id,householdLabel:h.block||"",period,date:period+"-01",items,cashReceived:0,depositUsed:Object.values(applied).reduce((a,b)=>a+b,0),appliedToBills:Object.values(applied).reduce((a,b)=>a+b,0),surplusDeposit:0,method:"deposit_auto",note:"Pemotongan deposit otomatis saat tagihan dibuat",recordedBy:recordedBy||null,createdAt:now};
+      }
+    }
+    for(const cat of ["kas","air","sampah"]){
+      if(depositSummary[cat]>0){
+        const balance=balances?.[cat]||{};
+        updates[`category_balances/${cat}`]={...balance,balance:(Number(balance.balance)||0)+depositSummary[cat],income:(Number(balance.income)||0)+depositSummary[cat],updatedAt:now};
+      }
     }
     updates[`billing_runs/${period}/status`]="completed";
     updates[`billing_runs/${period}/completedAt`]=now;
@@ -199,10 +221,18 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
     await update(ref(db),updates);
-    for(const [id,row] of Object.entries(updates).filter(([path])=>path.startsWith(`bills/${period}/`))){
+    for(const [id,row] of active.map(([id])=>[id,updates[`bills/${period}/${id}`]])){
       await setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining);
       await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
       await setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining);
+    }
+    for(const cat of ["kas","air","sampah"]){
+      if(depositSummary[cat]>0){
+        const txRef=push(root(`transactionsByMonth/${period}`));
+        const summaryId=txRef.key;
+        await set(txRef,{id:summaryId,type:"payment",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga",recordedBy:recordedBy||null,createdAt:now});
+        await applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"});
+      }
     }
     return {period,householdCount:active.length};
   } catch(error) {
