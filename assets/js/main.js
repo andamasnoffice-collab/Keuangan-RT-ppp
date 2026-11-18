@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
-import { login, logout, observeSession } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions, importWaterStatement } from "./data.js";
+import { login, logout, observeSession, reauthenticate } from "./auth.js";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js";
 import { renderPaymentPage } from "./payments.js?v=20261118-3";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -75,7 +75,7 @@ function card(label,value,sub=""){return `<div class="stat"><div class="label">$
 function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
-  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",households:"Rumah & Warga",payments:"Pembayaran",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan"};
+  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",households:"Rumah & Warga",payments:"Pembayaran",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan",masterData:"Master Data"};
   title(names[page]||"Dashboard");
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
@@ -93,7 +93,7 @@ async function render(){
     else if(page==="reports") await renderReports(c);
     else if(page==="whatsapp") await renderWhatsAppPage(c,{households,currentUser,currentProfile,toast});
     else if(page==="users") c.innerHTML='<div class="muted-note">Semua akun yang berhasil login memiliki hak pengelolaan yang sama. Penambahan akun dilakukan melalui Firebase Authentication oleh pemilik proyek.</div>';
-    else if(page==="settings") await renderSettings(c);
+    else if(page==="settings") await renderSettings(c);\n    else if(page==="masterData") renderMasterData(c);
   }catch(e){c.innerHTML=`<div class="muted-note">Gagal memuat data: ${e.message}</div>`;}
 }
 async function renderSettings(c){
@@ -463,6 +463,50 @@ async function renderExpenses(c){
       e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); $("#expensePeriod").value=String(f.get("date")).slice(0,7); await drawHistory();
     }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
     finally{button.disabled=false;button.textContent="Simpan pengeluaran";}
+  });
+}
+
+function renderMasterData(c){
+  c.innerHTML=`<div class="grid two">
+    <section class="panel"><h3>Hapus data berdasarkan periode</h3><p class="muted">Menghapus tagihan, pembayaran, pengeluaran, transaksi, meter air, ringkasan, dan rincian tunggakan pada satu bulan. Data rumah, tarif, saldo kategori dan periode lain dipertahankan.</p>
+      <label class="field">Pilih periode<input id="masterDeletePeriod" type="month" value="${monthKey()}"></label>
+      <button class="btn danger" id="deletePeriodBtn" type="button">Hapus data periode</button>
+    </section>
+    <section class="panel danger-panel"><h3>Hapus seluruh database aplikasi</h3><p>PERMANEN. Menghapus data rumah, semua tagihan, pembayaran, deposit, saldo kategori, meter air, transaksi, ringkasan, pengaturan tarif/saldo awal, dan tampilan publik. Riwayat audit dan akun Firebase Authentication tidak dihapus.</p>
+      <label class="check-row"><input type="checkbox" id="masterAllCheck"><span>Saya memahami seluruh data operasional aplikasi akan dihapus permanen.</span></label>
+      <button class="btn danger" id="deleteAllBtn" type="button" disabled>Hapus semua data aplikasi</button>
+    </section>
+  </div>
+  <div class="muted-note" style="margin-top:16px"><b>Pengaman:</b> setiap penghapusan meminta password akun Firebase yang sedang login, lalu konfirmasi teks khusus. Tindakan tidak dapat dibatalkan. Disarankan ekspor/backup data sebelum menghapus.</div>`;
+  $("#masterAllCheck").addEventListener("change",e=>$("#deleteAllBtn").disabled=!e.target.checked);
+  $("#deletePeriodBtn").addEventListener("click",()=>runMasterDelete("period"));
+  $("#deleteAllBtn").addEventListener("click",()=>runMasterDelete("all"));
+}
+async function runMasterDelete(mode){
+  const period=$("#masterDeletePeriod")?.value||"";
+  const phrase=mode==="all"?"HAPUS SEMUA DATA":"HAPUS "+period;
+  const label=mode==="all"?"SELURUH DATABASE APLIKASI":`DATA PERIODE ${period}`;
+  const dlg=$("#genericDialog"),box=$("#dialogContent");
+  box.innerHTML=`<h3>Konfirmasi penghapusan</h3><p class="error">Anda akan menghapus <b>${label}</b>. Tindakan ini permanen dan tidak dapat dibatalkan.</p>
+    <form id="masterConfirmForm" class="form-stack">
+      <label class="field">Ketik <b>${phrase}</b> untuk melanjutkan<input name="phrase" autocomplete="off" required></label>
+      <label class="field">Masukkan ulang password Firebase<input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="muted tiny">Password diverifikasi ulang ke Firebase Authentication sebelum penghapusan.</p>
+      <div class="form-actions"><button type="button" class="btn outline" id="cancelMasterDelete">Batal</button><button type="submit" class="btn danger">Konfirmasi hapus</button></div>
+      <p id="masterDeleteError" class="error" role="alert"></p>
+    </form>`;
+  dlg.showModal();
+  $("#cancelMasterDelete").addEventListener("click",()=>dlg.close());
+  $("#masterConfirmForm").addEventListener("submit",async e=>{
+    e.preventDefault();const form=e.currentTarget,fd=new FormData(form);
+    if(String(fd.get("phrase")||"").trim()!==phrase){$("#masterDeleteError").textContent="Teks konfirmasi tidak cocok.";return;}
+    const btn=form.querySelector('button[type="submit"]');btn.disabled=true;btn.textContent="Memverifikasi…";
+    try{
+      await reauthenticate(String(fd.get("password")||""));
+      await deleteMasterData({mode,period,recordedBy:currentUser?.uid});
+      dlg.close();toast(mode==="all"?"Seluruh data aplikasi berhasil dihapus.":"Data periode berhasil dihapus.");
+      households=await getHouseholds();householdsLoadedAt=Date.now();page="masterData";await render();
+    }catch(err){$("#masterDeleteError").textContent="Penghapusan gagal: "+err.message;btn.disabled=false;btn.textContent="Konfirmasi hapus";}
   });
 }
 async function renderTransactions(c){
