@@ -126,15 +126,17 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             updates[`deposits/${id}/${cat}`]=newDeposit;
             const ledgerRef=push(ref(db,"deposit_ledger"));
             updates[`deposit_ledger/${ledgerRef.key}`]={householdId:id,category:cat,amount:x.surplus-x.depositUsed,before:x.deposit,after:newDeposit,type:x.surplus>0&&x.depositUsed>0?"deposit_adjustment":x.surplus>0?"deposit_in":x.depositUsed>0?"deposit_applied":"payment",date,createdAt:timestamp,paymentId:paymentRef.key};
-            if(x.applied>0){
+            const appliedToCategory=x.applied+x.depositUsed;
+            if(appliedToCategory>0){
               const balancePath=`category_balances/${cat}`;
               const balance=await read(balancePath)||{};
-              updates[balancePath]={...balance,balance:num(balance.balance)+x.applied,income:num(balance.income)+x.applied,updatedAt:timestamp};
+              updates[balancePath]={...balance,balance:num(balance.balance)+appliedToCategory,income:num(balance.income)+appliedToCategory,updatedAt:timestamp};
               const balanceRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
-              updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:x.applied,householdId:id,referenceId:paymentRef.key,date,description:`Pembayaran ${labels[cat]}`,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-              summaryDeltas.push({id:balanceRef.key,category:cat,amount:x.applied,description:`Pembayaran ${labels[cat]}`});
+              const description=x.depositUsed>0&&x.applied>0?`Pembayaran ${labels[cat]} (tunai + deposit)`:x.depositUsed>0?`Pelunasan ${labels[cat]} dari deposit`:`Pembayaran ${labels[cat]}`;
+              updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:appliedToCategory,householdId:id,referenceId:paymentRef.key,date,description,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+              summaryDeltas.push({id:balanceRef.key,category:cat,amount:appliedToCategory,description});
             }
-            totalCash+=x.cash;totalApplied+=x.applied;totalDepositUsed+=x.depositUsed;totalSurplus+=x.surplus;
+            totalCash+=x.cash;totalApplied+=appliedToCategory;totalDepositUsed+=x.depositUsed;totalSurplus+=x.surplus;
           }
           updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items:entries.map(x=>({...x})),cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const auditRef=push(ref(db,"audit_logs"));
