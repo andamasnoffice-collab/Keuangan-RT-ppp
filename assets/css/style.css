@@ -496,3 +496,14 @@ td{color:var(--text)}
 .ledger-deposit{margin-top:3px;color:var(--green)}
 .ledger-deposit b{font-weight:750}
 @media(max-width:760px){.house-ledger-table{min-width:760px}.ledger-cash,.ledger-deposit{font-size:10px}}
+
+.ledger-deposit-in{margin-top:3px;color:var(--amber);font-size:11px;line-height:1.4;white-space:nowrap}
+.ledger-deposit-in b{font-weight:750}
+.deposit-balance-wrap{margin:12px 0;padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--surface-soft);color:var(--text)}
+.deposit-balance-wrap> b{display:block;margin-bottom:9px;font-size:12px}
+.deposit-balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.deposit-balance-card{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:10px;background:var(--surface);border:1px solid var(--line)}
+.deposit-balance-card span{font-size:11px;color:var(--muted)}
+.deposit-balance-card b{font-size:14px;color:var(--green)}
+:root[data-theme="dark"] .deposit-balance-wrap{background:var(--surface-soft);border-color:var(--line)}
+@media(max-width:420px){.deposit-balance-grid{gap:5px}.deposit-balance-card{padding:8px}.deposit-balance-card b{font-size:12px}}
