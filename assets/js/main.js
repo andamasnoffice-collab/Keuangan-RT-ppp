@@ -77,7 +77,7 @@ function card(label,value,sub=""){return `<div class="stat"><div class="label">$
 function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
-  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",households:"Rumah & Warga",payments:"Pembayaran",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan",masterData:"Master Data"};
+  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan",masterData:"Master Data"};
   title(names[page]||"Dashboard");
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
@@ -86,6 +86,7 @@ async function render(){
     if(page==="dashboard") await renderDashboard(c);
     else if(page==="publicBills") await renderPublicBills(c, true);
     else if(page==="households") renderHouseholds(c);
+    else if(page==="householdLedger") await renderHouseholdLedger(c);
     else if(page==="payments") await renderPaymentPage(c,{households,monthKey:monthKey(),money,toast,currentUser});
     else if(page==="deposits") await renderDeposits(c);
     else if(["kas","sampah","air"].includes(page)) await renderCategory(c,page);
@@ -308,7 +309,7 @@ function renderHouseholds(c){
   const draw=filter=>{$("#houseRows").innerHTML=rows.filter(h=>`${h.block} ${h.address} ${h.headName}`.toLowerCase().includes(filter.toLowerCase())).map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Tidak ada rumah yang cocok.</td></tr>';};
   $("#houseSearch").addEventListener("input",e=>draw(e.target.value));
   $("#addHouse").addEventListener("click",()=>houseDialog());
-  $("#houseRows").addEventListener("click",e=>{const ledger=e.target.closest("[data-house-ledger]");if(ledger){const h=rows.find(x=>x.id===ledger.dataset.houseLedger);if(h)householdLedgerDialog(h);return;}const b=e.target.closest("[data-edit-house]");if(!b)return;const h=rows.find(x=>x.id===b.dataset.editHouse);if(h)houseDialog(h);});
+  $("#houseRows").addEventListener("click",e=>{const b=e.target.closest("[data-edit-house]");if(!b)return;const h=rows.find(x=>x.id===b.dataset.editHouse);if(h)houseDialog(h);});
   $("#downloadHouseTemplate").addEventListener("click",downloadHouseholdTemplate);
   $("#houseImportFile").addEventListener("change",handleHouseholdImport);
 }
@@ -409,21 +410,20 @@ async function handleHouseholdImport(event){
   }catch(err){$("#houseImportPreview").innerHTML='<div class="muted-note">'+escapeHtml(err.message)+'</div>';toast("Impor gagal dibaca: "+err.message);}
   finally{input.disabled=false;}
 }
-function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><div class="house-actions"><button class="btn small secondary" type="button" data-house-ledger="${escapeHtml(h.id)}">Mutasi</button><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button></div></td></tr>`;}
-async function householdLedgerDialog(house){
-  const dlg=$("#genericDialog"),box=$("#dialogContent"),yearNow=new Date().getFullYear();
-  box.innerHTML=`<div class="house-ledger-title"><div><span class="eyebrow">RIWAYAT KEUANGAN WARGA</span><h3>Mutasi Rumah ${escapeHtml(house.block||"-")}</h3><p class="tiny muted">${escapeHtml(house.headName||"")} · ${escapeHtml(house.address||"")}</p></div></div><div class="house-ledger-filter"><label class="field">Tahun mutasi<input id="houseLedgerYear" type="number" min="2000" max="2100" value="${yearNow}"></label><button id="loadHouseLedger" class="btn primary">Tampilkan</button></div><div id="houseLedgerContent" class="table-wrap"><div class="empty">Pilih tahun lalu tampilkan mutasi.</div></div><p class="tiny muted">Nominal pembayaran adalah uang yang benar-benar diterima untuk masing-masing kategori. Pemakaian deposit ditampilkan terpisah dan tidak dihitung sebagai uang masuk baru.</p><div class="toolbar"><button type="button" class="btn outline" id="closeHouseLedger">Tutup</button></div>`;
-  dlg.showModal();
-  $("#closeHouseLedger").addEventListener("click",()=>dlg.close());
+function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button></td></tr>`;}
+async function renderHouseholdLedger(c){
+  const homes=Object.entries(households||{}).map(([id,h])=>({id,...h})).sort((a,b)=>compareBlocks(a.block,b.block));
+  c.innerHTML=`<section class="panel household-ledger-page"><div class="section-head" style="margin-top:0"><div><h3>Mutasi keuangan per warga</h3><p class="tiny muted">Riwayat pembayaran setiap rumah, dipisahkan menurut kategori dan bulan.</p></div><span class="pill">Data Firebase</span></div><div class="house-ledger-filter"><label class="field">Pilih rumah<select id="houseLedgerHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${escapeHtml(h.id)}">${escapeHtml(h.block||"-")} · ${escapeHtml(h.headName||"")}</option>`).join("")}</select></label><label class="field">Tahun mutasi<input id="houseLedgerYear" type="number" min="2000" max="2100" value="${new Date().getFullYear()}"></label><button id="loadHouseLedger" class="btn primary">Tampilkan</button></div><div id="houseLedgerContent"><div class="empty">Pilih rumah untuk melihat mutasi keuangannya.</div></div><p class="tiny muted">Nominal adalah pembayaran tunai yang benar-benar diterima. Pemakaian deposit ditampilkan terpisah dan tidak dihitung sebagai uang masuk baru.</p></section>`;
   const load=async()=>{
-    const year=Number($("#houseLedgerYear").value);
+    const id=$("#houseLedgerHouse").value,year=Number($("#houseLedgerYear").value),target=$("#houseLedgerContent");
+    if(!id){target.innerHTML='<div class="empty">Pilih rumah terlebih dahulu.</div>';return;}
     if(!Number.isInteger(year)||year<2000||year>2100){toast("Tahun mutasi tidak valid.");return;}
-    const target=$("#houseLedgerContent");target.innerHTML='<div class="empty">Memuat mutasi tahunan…</div>';
+    target.innerHTML='<div class="empty">Memuat mutasi tahunan…</div>';
     try{
       const periods=Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,"0")}`);
       const months=await Promise.all(periods.map(period=>getPayments(period)));
       const sums=periods.map((period,index)=>{
-        const payments=Object.values(months[index]||{}).filter(x=>x?.householdId===house.id);
+        const payments=Object.values(months[index]||{}).filter(x=>x?.householdId===id);
         const row={period,cash:{kas:0,air:0,sampah:0},deposit:{kas:0,air:0,sampah:0},count:payments.length};
         payments.forEach(payment=>(payment.items||[]).forEach(item=>{
           if(!["kas","air","sampah"].includes(item.cat))return;
@@ -437,11 +437,11 @@ async function householdLedgerDialog(house){
       const fmt=n=>money(n),monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
       const total={kas:0,air:0,sampah:0,deposit:0,cash:0};
       sums.forEach(row=>{for(const cat of ["kas","air","sampah"])total[cat]+=row.cash[cat];total.deposit+=row.depositTotal;total.cash+=row.total;});
-      target.innerHTML=`<table class="house-ledger-table"><thead><tr><th>Bulan</th><th>Kas RT</th><th>Air</th><th>Sampah</th><th>Total uang masuk</th><th>Deposit dipakai</th></tr></thead><tbody>${sums.map((row,i)=>`<tr><td>${monthNames[i]}</td><td>${fmt(row.cash.kas)}</td><td>${fmt(row.cash.air)}</td><td>${fmt(row.cash.sampah)}</td><td><b>${fmt(row.total)}</b></td><td>${fmt(row.depositTotal)}</td></tr>`).join("")}<tr class="ledger-total"><td><b>Total ${year}</b></td><td><b>${fmt(total.kas)}</b></td><td><b>${fmt(total.air)}</b></td><td><b>${fmt(total.sampah)}</b></td><td><b>${fmt(total.cash)}</b></td><td><b>${fmt(total.deposit)}</b></td></tr></tbody></table><p class="tiny muted">Jumlah transaksi tercatat: ${sums.reduce((a,b)=>a+b.count,0)} pembayaran.</p>`;
+      target.innerHTML=`<div class="house-ledger-heading"><div><b>Mutasi ${escapeHtml(homes.find(h=>h.id===id)?.block||"")}</b><span class="tiny muted"> · ${year}</span></div><span class="pill">${sums.reduce((a,b)=>a+b.count,0)} pembayaran</span></div><div class="table-wrap"><table class="house-ledger-table"><thead><tr><th>Bulan</th><th>Kas RT</th><th>Air</th><th>Sampah</th><th>Total uang masuk</th><th>Deposit dipakai</th></tr></thead><tbody>${sums.map((row,i)=>`<tr><td>${monthNames[i]}</td><td>${fmt(row.cash.kas)}</td><td>${fmt(row.cash.air)}</td><td>${fmt(row.cash.sampah)}</td><td><b>${fmt(row.total)}</b></td><td>${fmt(row.depositTotal)}</td></tr>`).join("")}<tr class="ledger-total"><td><b>Total ${year}</b></td><td><b>${fmt(total.kas)}</b></td><td><b>${fmt(total.air)}</b></td><td><b>${fmt(total.sampah)}</b></td><td><b>${fmt(total.cash)}</b></td><td><b>${fmt(total.deposit)}</b></td></tr></tbody></table></div>`;
     }catch(err){target.innerHTML=`<div class="muted-note">Gagal memuat mutasi: ${escapeHtml(err.message)}</div>`;}
   };
   $("#loadHouseLedger").addEventListener("click",load);
-  await load();
+  $("#houseLedgerHouse").addEventListener("change",load);
 }
 function houseDialog(existing=null){
   const editing=!!existing;
