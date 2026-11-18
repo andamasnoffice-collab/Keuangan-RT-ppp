@@ -488,6 +488,22 @@ export async function getPublicBills() {
   return await read("public_views/allOutstanding") || {};
 }
 
+/**
+ * Rebuilds the public projection from the authoritative private Firebase nodes.
+ * Called after billing, meter, payment, and import operations have completed.
+ */
+export async function refreshPublicSnapshot(currentPeriod, householdsOverride=null) {
+  if(!validPeriod(currentPeriod)) throw new Error("Periode publik tidak valid.");
+  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger]=await Promise.all([
+    householdsOverride||getHouseholds(),
+    read("category_balances"),
+    read("financeSummaryByMonth"),
+    read("arrearsSummary"),
+    read("arrearsLedger")
+  ]);
+  return await publishPublicSnapshot(currentPeriod,homes||{},balances||{},financeSummary||{},arrearsSummary||{},arrearsLedger||{});
+}
+
 const MASTER_DATA_NODES=["households","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
 export async function deleteMasterData({mode,period,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
