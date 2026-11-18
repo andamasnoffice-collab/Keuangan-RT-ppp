@@ -88,3 +88,26 @@
  .firebase-status{padding:6px 7px}
  .firebase-status #connectionLabel{max-width:100px;overflow:hidden;text-overflow:ellipsis}
 }
+
+
+/* Compact water meter entry list */
+.water-meter-panel{padding:18px}
+.water-meter-line{display:grid;grid-template-columns:minmax(145px, .8fr) minmax(220px,1.6fr) auto;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid var(--line)}
+.water-meter-line:last-child{border-bottom:0}
+.water-meter-home{display:grid;gap:4px;min-width:0}
+.water-meter-home b{font-size:14px}
+.water-meter-home small,.water-meter-entry small,.water-meter-done small{font-size:11px;color:var(--muted)}
+.water-meter-entry{display:grid;gap:5px;min-width:0}
+.water-meter-entry input{width:100%;min-height:42px}
+.water-meter-line .meter-save{min-width:86px;min-height:40px}
+.water-meter-done{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.water-meter-done small{flex:1}
+@media(max-width:600px){
+ .water-meter-panel{padding:12px}
+ .water-meter-line{grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;padding:13px 0}
+ .water-meter-home{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}
+ .water-meter-entry{grid-column:1/2}
+ .water-meter-entry input{min-height:46px;font-size:16px}
+ .water-meter-line .meter-save{grid-column:2;grid-row:2;align-self:start;min-width:76px}
+ .water-meter-done{grid-column:1/-1}
+}
