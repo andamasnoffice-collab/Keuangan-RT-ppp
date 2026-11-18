@@ -1,6 +1,6 @@
 import { ref, push, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, applyArrearsDelta } from "./data.js";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod } from "./data.js";
 
 const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
@@ -23,19 +23,19 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
     if(!id){box.innerHTML='<div class="empty">Pilih rumah untuk menampilkan tagihan dan deposit.</div>';return;}
     box.innerHTML='<div class="empty">Mengambil tagihan dan deposit…</div>';
     try{
-      const {getMonthBills,read}=await import("./data.js");
-      const [allBills,dep]=await Promise.all([getMonthBills(monthKey),read(`deposits/${id}`)]);
-      const bill=allBills[id]||{};
+      const {getHouseholdArrearLedger,read}=await import("./data.js");
+      const [ledger,dep]=await Promise.all([getHouseholdArrearLedger(id),read(`deposits/${id}`)]);
+      const periods=Object.keys(ledger||{}).filter(p=>/^\\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
+      const periodBills=periods.map(period=>({period,categories:ledger[period]||{}}));
       box.innerHTML=`
-        <div class="section-head payment-period"><h3>Tagihan periode ${esc(monthKey)}</h3><span class="pill">Deposit otomatis diperhitungkan</span></div>
-        <div class="summary-box payment-month-total" style="margin:12px 0 16px;padding:16px;border:1px solid var(--border,#dbe4ee);border-radius:14px;background:#eef5f8"><div class="muted tiny">TOTAL HARUS DIBAYARKAN BULAN INI (SETELAH DEPOSIT)</div><div id="sumMonthDue" style="font-size:clamp(24px,4vw,32px);font-weight:800;margin-top:5px">${money(0)}</div><small class="muted">Jumlah sisa Kas RT, Kas Air, dan Uang Sampah setelah deposit kategori masing-masing diperhitungkan.</small></div>\n        <div class="payment-categories">${categories.map(cat=>{
-          const b=bill[cat]||{};
-          const gross=num(b.remaining??(num(b.amount)-num(b.paidAmount)));
+        <div class="section-head payment-period"><h3>Akumulasi tagihan sampai ${esc(monthKey)}</h3><span class="pill">Deposit otomatis diperhitungkan</span></div>
+        <div class="summary-box payment-month-total" style="margin:12px 0 16px;padding:16px;border:1px solid var(--border,#dbe4ee);border-radius:14px;background:#eef5f8"><div class="muted tiny">TOTAL HARUS DIBAYARKAN BULAN INI (SETELAH DEPOSIT)</div><div id="sumMonthDue" style="font-size:clamp(24px,4vw,32px);font-weight:800;margin-top:5px">${money(0)}</div><small class="muted">Jumlah kewajiban semua bulan yang belum lunas, setelah deposit kategori masing-masing diperhitungkan. Pembayaran mengutamakan bulan tertua.</small></div>\n        <div class="payment-categories">${categories.map(cat=>{
+          const gross=periodBills.reduce((sum,row)=>sum+num(row.categories?.[cat]),0);
           const deposit=num(dep?.[cat]);
           const depositUsed=Math.min(gross,deposit);
           const net=Math.max(0,gross-depositUsed);
           return `<section class="payment-category" data-category="${cat}" data-gross="${gross}" data-deposit="${deposit}" data-deposit-used="${depositUsed}" data-net="${net}">
-            <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Sisa tagihan sebelum deposit</span></div><strong>${money(gross)}</strong></div>
+            <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Akumulasi seluruh bulan belum lunas</span></div><strong>${money(gross)}</strong></div>
             <div class="payment-metrics">
               <div><small>Deposit tersedia</small><b>${money(deposit)}</b></div>
               <div><small>Deposit dipakai</small><b class="deposit-used">${money(depositUsed)}</b></div>
@@ -100,29 +100,35 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           let totalCash=0,totalApplied=0,totalDepositUsed=0,totalSurplus=0;
           for(const x of entries){
             const {cat}=x;
-            const currentBill=bill[cat]||{};
-            const oldPaid=num(currentBill.paidAmount);
-            const newPaid=oldPaid+x.depositUsed+x.applied;
-            const newRemaining=Math.max(0,x.gross-x.depositUsed-x.applied);
-            const oldDeposit=x.deposit;
-            const newDeposit=oldDeposit-x.depositUsed+x.surplus;
-            updates[`bills/${monthKey}/${id}/${cat}/paidAmount`]=newPaid;
-            updates[`bills/${monthKey}/${id}/${cat}/remaining`]=newRemaining;
-            updates[`bills/${monthKey}/${id}/${cat}/status`]=newRemaining===0?"paid":"partial";
+            let depositLeft=x.depositUsed;
+            let cashLeft=x.applied;
+            for(const row of periodBills){
+              const due=num(row.categories?.[cat]);
+              if(due<=0)continue;
+              const useDeposit=Math.min(due,depositLeft);depositLeft-=useDeposit;
+              const useCash=Math.min(Math.max(0,due-useDeposit),cashLeft);cashLeft-=useCash;
+              const paidNow=useDeposit+useCash;
+              if(paidNow>0){
+                const current=await read(`bills/${row.period}/${id}/${cat}`)||{};
+                const paidAmount=num(current.paidAmount)+paidNow;
+                const remaining=Math.max(0,due-paidNow);
+                updates[`bills/${row.period}/${id}/${cat}/paidAmount`]=paidAmount;
+                updates[`bills/${row.period}/${id}/${cat}/remaining`]=remaining;
+                updates[`bills/${row.period}/${id}/${cat}/status`]=remaining===0?"paid":"partial";
+                updates[`arrearsLedger/${id}/${row.period}/${cat}`]=remaining;
+              }
+            }
+            const newDeposit=x.deposit-x.depositUsed+x.surplus;
             updates[`deposits/${id}/${cat}`]=newDeposit;
             const ledgerRef=push(ref(db,"deposit_ledger"));
-            updates[`deposit_ledger/${ledgerRef.key}`]={householdId:id,category:cat,amount:x.surplus-x.depositUsed,before:oldDeposit,after:newDeposit,type:x.surplus>0&&x.depositUsed>0?"deposit_adjustment":x.surplus>0?"deposit_in":x.depositUsed>0?"deposit_applied":"payment",date,createdAt:timestamp,paymentId:paymentRef.key};
-            const balanceRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
-            transactionIds.push(balanceRef.key);
+            updates[`deposit_ledger/${ledgerRef.key}`]={householdId:id,category:cat,amount:x.surplus-x.depositUsed,before:x.deposit,after:newDeposit,type:x.surplus>0&&x.depositUsed>0?"deposit_adjustment":x.surplus>0?"deposit_in":x.depositUsed>0?"deposit_applied":"payment",date,createdAt:timestamp,paymentId:paymentRef.key};
             if(x.applied>0){
               const balancePath=`category_balances/${cat}`;
-              const {read}=await import("./data.js");
               const balance=await read(balancePath)||{};
               updates[balancePath]={...balance,balance:num(balance.balance)+x.applied,income:num(balance.income)+x.applied,updatedAt:timestamp};
+              const balanceRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]={id:balanceRef.key,type:"payment",category:cat,amount:x.applied,householdId:id,referenceId:paymentRef.key,date,description:`Pembayaran ${labels[cat]}`,recordedBy:currentUser?.uid||null,createdAt:timestamp};
               summaryDeltas.push({id:balanceRef.key,category:cat,amount:x.applied,description:`Pembayaran ${labels[cat]}`});
-            }else{
-              updates[`transactionsByMonth/${paymentPeriod}/${balanceRef.key}`]=null;
             }
             totalCash+=x.cash;totalApplied+=x.applied;totalDepositUsed+=x.depositUsed;totalSurplus+=x.surplus;
           }
@@ -131,9 +137,12 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:monthKey,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           await update(ref(db),updates);
           for(const item of summaryDeltas) await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
-          const arrearsDelta={kas:0,air:0,sampah:0};
-          for(const x of entries) arrearsDelta[x.cat]-=(x.depositUsed+x.applied);
-          await applyArrearsDelta(id,`payment-${paymentRef.key}`,arrearsDelta);
+          for(const cat of categories){
+            for(const row of periodBills){
+              const path=`bills/${row.period}/${id}/${cat}/remaining`;
+              if(Object.prototype.hasOwnProperty.call(updates,path)) await setHouseholdArrearPeriod(id,row.period,cat,updates[path]);
+            }
+          }
           toast("Pembayaran tersimpan. Deposit dan sisa tagihan diperbarui.");
           await select.dispatchEvent(new Event("change"));
         }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
