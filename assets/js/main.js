@@ -321,21 +321,33 @@ async function renderWaterMeters(c){
   const period=monthKey(),settings=await getBillingSettings(),readings=await read(`water_readings/${period}`)||{},run=await read(`billing_runs/${period}`);
   const homes=Object.entries(households).filter(([,h])=>h&&h.status!=="empty"&&h.status!=="inactive").sort((a,b)=>String(a[1].block||"").localeCompare(String(b[1].block||"")));
   const recorded=homes.filter(([id])=>!!readings[id]).length;
-  c.innerHTML=`<div class="grid stats">${card("Rumah aktif",homes.length,"Dihuni dan kontrak")}${card("Meter tercatat",recorded,"Periode "+period)}${card("Belum tercatat",homes.length-recorded,"Hanya beban administrasi air")}</div>
-  <div class="panel"><div class="section-head" style="margin-top:0"><div><h3>Meteran air · ${period}</h3><p class="muted tiny">Masukkan angka meter akhir setiap bulan. Pemakaian dan biaya dihitung langsung.</p></div><span class="pill">${money(settings.waterPerM3||0)} / m³</span></div>
-  ${!run||run.status!=="completed"?'<div class="muted-note">Tagihan bulan ini belum dibuat. Klik tombol Buat Tagihan Bulan Ini di bagian atas Dashboard terlebih dahulu. Jika meter belum dicatat, kewajiban air hanya berupa administrasi bulanan.</div>':homes.map(([id,h])=>{
-    const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0,saved=readings[id];
-    return `<div class="meter-row" data-house="${escapeHtml(id)}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
-      <div class="meter-row-head"><b>${escapeHtml(h.block||"Rumah")}</b><span class="muted tiny">Meter awal: ${previous.toLocaleString("id-ID")} m³</span></div>
-      ${saved?`<div class="meter-saved"><b>Sudah dicatat</b> · Meter akhir ${saved.currentMeter} m³ · Pemakaian ${saved.usage} m³ · Tagihan ${money(saved.totalAmount)}</div>`:`<label class="field">Angka meter akhir (m³)<input class="meter-current" type="number" min="${previous}" step="0.001" inputmode="decimal" placeholder="Masukkan angka meter"></label><div class="meter-calc"><span>Pemakaian: <b class="meter-usage">0 m³</b></span><span>Perkiraan tagihan: <b class="meter-total">${money(Number(settings.waterAdmin)||0)}</b></span></div><button class="btn primary meter-save" type="button" ${!run||run.status!=="completed"?"disabled":""}>Simpan meter air</button>`}
-    </div>`;
-  }).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}</div>`;
-  c.querySelectorAll(".meter-row").forEach(row=>{
+  c.innerHTML=`<div class="grid stats">${card("Rumah aktif",homes.length,"Dihuni dan kontrak")}${card("Meter tercatat",recorded,"Periode "+period)}${card("Belum tercatat",homes.length-recorded,"Menunggu pencatatan meter")}</div>
+  <div class="panel water-meter-panel">
+    <div class="section-head" style="margin-top:0"><div><h3>Meteran air · ${period}</h3><p class="muted tiny">Masukkan angka akhir pada setiap rumah. Pemakaian dihitung otomatis.</p></div><span class="pill">${money(settings.waterPerM3||0)} / m³</span></div>
+    ${!run||run.status!=="completed"?'<div class="muted-note">Tagihan bulan ini belum dibuat. Klik Buat Tagihan Bulan Ini di bagian atas Dashboard terlebih dahulu.</div>':homes.map(([id,h])=>{
+      const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0,saved=readings[id];
+      return `<div class="water-meter-line" data-house="${escapeHtml(id)}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
+        <div class="water-meter-home"><b>${escapeHtml(h.block||"Rumah")}</b><small>Awal: ${previous.toLocaleString("id-ID")} m³</small></div>
+        ${saved?`<div class="water-meter-done"><b>${Number(saved.currentMeter).toLocaleString("id-ID")} m³</b><small>Pemakaian ${saved.usage} m³ · ${money(saved.totalAmount)}</small><span class="pill success">Tersimpan</span></div>`:`<div class="water-meter-entry"><input class="meter-current" type="number" min="${previous}" step="0.001" inputmode="decimal" placeholder="Angka meter akhir" aria-label="Angka meter akhir untuk ${escapeHtml(h.block||"rumah")}"><small class="meter-preview">Isi angka meter akhir</small></div><button class="btn primary small meter-save" type="button" disabled>Simpan</button>`}
+      </div>`;
+    }).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}
+  </div>`;
+  c.querySelectorAll(".water-meter-line").forEach(row=>{
     const input=row.querySelector(".meter-current");if(!input)return;
     const previous=Number(row.dataset.previous),rate=Number(row.dataset.rate),admin=Number(row.dataset.admin);
-    const preview=()=>{const current=Number(input.value),valid=input.value!==""&&Number.isFinite(current)&&current>=previous,usage=valid?current-previous:0;row.querySelector(".meter-usage").textContent=usage.toLocaleString("id-ID")+" m³";row.querySelector(".meter-total").textContent=money(admin+Math.round(usage*rate));row.querySelector(".meter-save").disabled=!valid;input.setCustomValidity(input.value!==""&&current<previous?"Meter akhir tidak boleh lebih kecil dari meter awal.":"");};
+    const preview=()=>{
+      const current=Number(input.value),valid=input.value!==""&&Number.isFinite(current)&&current>=previous,usage=valid?current-previous:0;
+      row.querySelector(".meter-preview").textContent=valid?`Pemakaian ${usage.toLocaleString("id-ID")} m³ · Tagihan ${money(admin+Math.round(usage*rate))}`:input.value&&current<previous?"Angka tidak boleh lebih kecil dari meter awal":"Isi angka meter akhir";
+      row.querySelector(".meter-save").disabled=!valid;
+      input.setCustomValidity(input.value!==""&&current<previous?"Meter akhir tidak boleh lebih kecil dari meter awal.":"");
+    };
     input.addEventListener("input",preview);
-    row.querySelector(".meter-save").addEventListener("click",async()=>{if(!input.reportValidity())return;const button=row.querySelector(".meter-save");button.disabled=true;button.textContent="Menyimpan…";try{const result=await saveWaterReading({period,householdId:row.dataset.house,currentMeter:input.value,recordedBy:currentUser?.uid});toast(`Meter ${result.usage} m³ tersimpan. Tagihan air ${money(result.totalAmount)}.`);await render();}catch(err){toast("Gagal menyimpan meter: "+err.message);button.disabled=false;button.textContent="Simpan meter air";}});
+    row.querySelector(".meter-save").addEventListener("click",async()=>{
+      if(!input.reportValidity())return;
+      const button=row.querySelector(".meter-save");button.disabled=true;button.textContent="…";
+      try{const result=await saveWaterReading({period,householdId:row.dataset.house,currentMeter:input.value,recordedBy:currentUser?.uid});toast(`Meter ${result.usage} m³ tersimpan. Tagihan air ${money(result.totalAmount)}.`);await render();}
+      catch(err){toast("Gagal menyimpan meter: "+err.message);button.disabled=false;button.textContent="Simpan";}
+    });
   });
 }
 async function renderCategory(c,cat){
