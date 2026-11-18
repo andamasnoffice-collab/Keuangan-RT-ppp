@@ -270,6 +270,11 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     }
     updates[`water_import_runs/${period}`]={status:"completed",period,completedAt:now,recordedBy:recordedBy||null,rowCount:rows.length,created,matched,meters,charges,needsReview};
     await update(ref(db),updates);
+    for(const row of rows){
+      const blockKey=norm(row.block);
+      const house=byBlock.get(blockKey);
+      if(house&&row.amount!==null&&row.amount!==undefined) await setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0);
+    }
     return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
   }catch(error){
     await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
