@@ -342,6 +342,7 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_corrected",period,householdId,previousMeter:previous,oldCurrentMeter:existing.currentMeter,newCurrentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await update(ref(db),updates);
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
+  await applyDepositToWaterBill(period,householdId,recordedBy);
   return reading;
 }
 
@@ -375,6 +376,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await update(ref(db),updates);
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
+  await applyDepositToWaterBill(period,householdId,recordedBy);
   return reading;
 }
 
