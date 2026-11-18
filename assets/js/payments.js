@@ -3,6 +3,7 @@ import { db } from "./firebase.js";
 import { applyMonthlySummaryDelta, setHouseholdArrearPeriod } from "./data.js?v=20261118-auto-public1";
 
 const categories=["kas","air","sampah"];
+const blockCollator=new Intl.Collator("id",{numeric:true,sensitivity:"base"});
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
 const money=n=>"Rp "+new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
 const parseRupiah=value=>Number(String(value??"").replace(/[^0-9-]/g,""))||0;
@@ -11,7 +12,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const num=n=>Math.max(0,Number(n)||0);
 
 export async function renderPaymentPage(container,{households,monthKey,toast,currentUser}){
-  const homes=Object.entries(households||{}).map(([id,h])=>({id,...h})).sort((a,b)=>String(a.block||"").localeCompare(String(b.block||"")));
+  const homes=Object.entries(households||{}).map(([id,h])=>({id,...h})).sort((a,b)=>blockCollator.compare(String(a.block||"").trim(),String(b.block||"").trim()));
   container.innerHTML=`<div class="panel payment-panel">
     <div class="section-head" style="margin-top:0"><div><h3>Pencatatan pembayaran warga</h3><small class="muted">Pembayaran dan deposit dihitung terpisah untuk setiap kategori.</small></div><span class="pill success">Satu pintu</span></div>
     <label class="field full-row">Pilih rumah<select id="payHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${esc(h.id)}">${esc(h.block||"")} · ${esc(h.headName||"")} · ${esc(h.address||"")}</option>`).join("")}</select></label>
