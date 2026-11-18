@@ -71,8 +71,13 @@ export async function migrateMonthlyIndexes(recordedBy) {
     add("transactionsByMonth",transactions);
     add("expensesByMonth",expenses);
     add("paymentsByMonth",payments);
-    if(Object.keys(updates).length) await update(ref(db),updates);
-    const result={status:"completed",completedAt:Date.now(),recordedBy:recordedBy||null,counts:{transactions:Object.keys(transactions||{}).length,expenses:Object.keys(expenses||{}).length,payments:Object.keys(payments||{}).length}};
+    const entries=Object.entries(updates);
+    for(let i=0;i<entries.length;i+=400){
+      const batch=Object.fromEntries(entries.slice(i,i+400));
+      await update(ref(db),batch);
+      await set(lock,{status:"processing",startedAt:claim.snapshot.val()?.startedAt||Date.now(),processed:Math.min(i+400,entries.length),total:entries.length,recordedBy:recordedBy||null});
+    }
+    const result={status:"completed",completedAt:Date.now(),recordedBy:recordedBy||null,counts:{transactions:Object.keys(transactions||{}).length,expenses:Object.keys(expenses||{}).length,payments:Object.keys(payments||{}).length},indexedPaths:entries.length};
     await set(lock,result);
     return result;
   }catch(error){
@@ -80,7 +85,6 @@ export async function migrateMonthlyIndexes(recordedBy) {
     throw error;
   }
 }
-
 
 const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 export async function createMonthlyBills(period, recordedBy) {
