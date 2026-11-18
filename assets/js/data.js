@@ -76,7 +76,7 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/householdCount`]=active.length;
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
-    await update(root(""),updates);
+    await update(ref(db),updates);
     return {period,householdCount:active.length};
   } catch(error) {
     await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
@@ -112,7 +112,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
-  await update(root(""),updates);
+  await update(ref(db),updates);
   return reading;
 }
 
@@ -151,7 +151,7 @@ export async function saveBillingSettings(values) {
   }
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"opening_balances_updated", openingBalances, createdAt:Date.now()};
-  await update(root(""), updates);
+  await update(ref(db), updates);
   return clean;
 }
 
@@ -176,7 +176,7 @@ export async function createExpense({category, amount, date, description, proof,
   updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
-  await update(root(""), updates);
+  await update(ref(db), updates);
   return record;
 }
 
