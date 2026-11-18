@@ -343,7 +343,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     for(const row of rows){
       const blockKey=norm(row.block);
       const house=byBlock.get(blockKey);
-      if(house&&row.amount!==null&&row.amount!==undefined) await setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0);
+      if(house&&row.amount!==null&&row.amount!==undefined){await setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0);await applyDepositToWaterBill(period,house.id,recordedBy);}
     }
     return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
   }catch(error){
