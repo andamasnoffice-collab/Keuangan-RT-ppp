@@ -5,7 +5,7 @@ const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Kas Air",sampah:"Uang Sampah"};
 const money=n=>"Rp "+new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
 const parseRupiah=value=>Number(String(value??"").replace(/[^0-9-]/g,""))||0;
-const formatRupiahInput=value=>String(value??"").replace(/[^0-9]/g,"").replace(/\\B(?=(\\d{3})+(?!\\d))/g,".");
+const formatRupiahInput=value=>String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=n=>Math.max(0,Number(n)||0);
 
