@@ -71,7 +71,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           card.querySelector(".payment-result").textContent=extra>0?`Lebih bayar menjadi deposit: ${money(extra)}`:remaining>0?`Kurang bayar: ${money(remaining)}`:due===0?"Tidak ada pembayaran manual yang diperlukan.":"Tagihan kategori ini lunas.";
           gross+=num(card.dataset.gross);depositUsed+=depUsed;cash+=paid;surplus+=extra;short+=remaining;
         });
-        box.querySelector("#sumMonthDue").textContent=money(cards.reduce((sum,card)=>sum+num(card.dataset.net),0));\n        box.querySelector("#sumGross").textContent=money(gross);
+        box.querySelector("#sumMonthDue").textContent=money(cards.reduce((sum,card)=>sum+num(card.dataset.net),0));
+        box.querySelector("#sumGross").textContent=money(gross);
         box.querySelector("#sumDeposit").textContent=money(depositUsed);
         box.querySelector("#sumCash").textContent=money(cash);
         box.querySelector("#sumSurplus").textContent=money(surplus);
