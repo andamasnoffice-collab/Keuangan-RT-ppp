@@ -448,3 +448,45 @@ td{color:var(--text)}
  .theme-toggle .theme-label{display:none!important}
  .user-area>span#userLabel{display:none}
 }
+
+
+/* Dark theme coverage for legacy V2 components */
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] #appView,
+:root[data-theme="dark"] .main{background:var(--bg);color:var(--text)}
+:root[data-theme="dark"] .topbar,
+:root[data-theme="dark"] .stat,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .category-card,
+:root[data-theme="dark"] .payment-category,
+:root[data-theme="dark"] .wa-recipient,
+:root[data-theme="dark"] .water-meter-panel,
+:root[data-theme="dark"] .login-card,
+:root[data-theme="dark"] .login-dialog{background:var(--surface);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .field input,
+:root[data-theme="dark"] .field select,
+:root[data-theme="dark"] .field textarea,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .search-input{background:var(--field-bg);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .table-wrap,
+:root[data-theme="dark"] table{background:var(--surface)}
+:root[data-theme="dark"] th{background:var(--table-head);color:var(--muted)}
+:root[data-theme="dark"] td{color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .summary-box,
+:root[data-theme="dark"] .payment-metrics,
+:root[data-theme="dark"] .metric-row,
+:root[data-theme="dark"] .check-row{background:var(--surface-soft);border-color:var(--line);color:var(--text)}
+:root[data-theme="dark"] .wa-message{background:var(--surface-soft);border-color:var(--line);color:var(--text)}
+:root[data-theme="dark"] .btn.outline{background:var(--surface);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .btn.secondary{background:#173a46;color:#a9e6e4}
+:root[data-theme="dark"] .dialog-close{background:#23364a;color:var(--text)}
+:root[data-theme="dark"] .login-wrap{background:linear-gradient(135deg,#08111d,#101f30)}
+:root[data-theme="dark"] .login-card input{background:var(--field-bg);color:var(--text)}
+:root[data-theme="dark"] .nav-group-title{color:#8ca9bc}
+:root[data-theme="dark"] .empty{color:var(--muted)}
+:root[data-theme="dark"] .water-meter-line{border-color:var(--line)}
+:root[data-theme="dark"] .house-ledger-table .ledger-total td{background:var(--surface-soft)}
+:root[data-theme="dark"] .toast{background:#203b53;color:#fff}
