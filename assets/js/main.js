@@ -459,7 +459,7 @@ async function handleHouseholdImport(event){
 function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button></td></tr>`;}
 async function renderHouseholdLedger(c){
   const homes=Object.entries(households||{}).map(([id,h])=>({id,...h})).sort((a,b)=>compareBlocks(a.block,b.block));
-  c.innerHTML=`<section class="panel household-ledger-page"><div class="section-head" style="margin-top:0"><div><h3>Mutasi keuangan per warga</h3><p class="tiny muted">Pembayaran tunai dan pemakaian deposit ditampilkan terpisah per kategori.</p></div><span class="pill">Data Firebase</span></div><div class="house-ledger-filter"><label class="field">Pilih rumah<select id="houseLedgerHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${escapeHtml(h.id)}">${escapeHtml(h.block||"-")} · ${escapeHtml(h.headName||"")}</option>`).join("")}</select></label><label class="field">Tahun mutasi<input id="houseLedgerYear" type="number" min="2000" max="2100" value="${new Date().getFullYear()}"></label><button id="loadHouseLedger" class="btn primary">Tampilkan</button></div><div id="houseLedgerContent"><div class="empty">Pilih rumah untuk melihat mutasi keuangannya.</div></div><p class="tiny muted">Deposit otomatis mengurangi tagihan kategori yang sama. Pembayaran dari deposit bukan uang tunai baru dan tidak dihitung sebagai pemasukan kas dua kali.</p></section>`;
+  c.innerHTML=`<section class="panel household-ledger-page"><div class="section-head" style="margin-top:0"><div><h3>Mutasi keuangan per warga</h3><p class="tiny muted">Pembayaran tunai, deposit masuk, dan deposit yang dipakai ditampilkan terpisah.</p></div><span class="pill">Data Firebase</span></div><div class="house-ledger-filter"><label class="field">Pilih rumah<select id="houseLedgerHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${escapeHtml(h.id)}">${escapeHtml(h.block||"-")} · ${escapeHtml(h.headName||"")}</option>`).join("")}</select></label><label class="field">Tahun mutasi<input id="houseLedgerYear" type="number" min="2000" max="2100" value="${new Date().getFullYear()}"></label><button id="loadHouseLedger" class="btn primary">Tampilkan</button></div><div id="houseLedgerContent"><div class="empty">Pilih rumah untuk melihat mutasi keuangannya.</div></div><p class="tiny muted">Deposit otomatis mengurangi tagihan kategori yang sama. Pembayaran dari deposit bukan uang tunai baru dan tidak dihitung sebagai pemasukan kas dua kali.</p></section>`;
   const load=async()=>{
     const id=$("#houseLedgerHouse").value,year=Number($("#houseLedgerYear").value),target=$("#houseLedgerContent");
     if(!id){target.innerHTML='<div class="empty">Pilih rumah terlebih dahulu.</div>';return;}
@@ -467,24 +467,27 @@ async function renderHouseholdLedger(c){
     target.innerHTML='<div class="empty">Memuat mutasi tahunan…</div>';
     try{
       const periods=Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,"0")}`);
-      const months=await Promise.all(periods.map(period=>getPayments(period)));
+      const [months,currentDeposits]=await Promise.all([Promise.all(periods.map(period=>getPayments(period))),read(`deposits/${id}`)]);
       const sums=periods.map((period,index)=>{
         const payments=Object.values(months[index]||{}).filter(x=>x?.householdId===id);
-        const row={period,cash:{kas:0,air:0,sampah:0},deposit:{kas:0,air:0,sampah:0},count:payments.length};
+        const row={period,cash:{kas:0,air:0,sampah:0},depositIn:{kas:0,air:0,sampah:0},depositUsed:{kas:0,air:0,sampah:0},count:payments.length};
         payments.forEach(payment=>(payment.items||[]).forEach(item=>{
           if(!["kas","air","sampah"].includes(item.cat))return;
           row.cash[item.cat]+=Number(item.cash)||0;
-          row.deposit[item.cat]+=Number(item.depositUsed)||0;
+          row.depositIn[item.cat]+=Number(item.surplus)||0;
+          row.depositUsed[item.cat]+=Number(item.depositUsed)||0;
         }));
         row.cashTotal=Object.values(row.cash).reduce((a,b)=>a+b,0);
-        row.depositTotal=Object.values(row.deposit).reduce((a,b)=>a+b,0);
+        row.depositInTotal=Object.values(row.depositIn).reduce((a,b)=>a+b,0);
+        row.depositUsedTotal=Object.values(row.depositUsed).reduce((a,b)=>a+b,0);
         return row;
       });
       const fmt=n=>money(n),monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-      const total={kas:0,air:0,sampah:0,depositKas:0,depositAir:0,depositSampah:0,cash:0,deposit:0};
-      sums.forEach(row=>{for(const cat of ["kas","air","sampah"]){total[cat]+=row.cash[cat];total["deposit"+cat[0].toUpperCase()+cat.slice(1)]+=row.deposit[cat];}total.cash+=row.cashTotal;total.deposit+=row.depositTotal;});
-      const cell=(cash,dep)=>`<div class="ledger-cash"><b>Tunai</b> ${fmt(cash)}</div><div class="ledger-deposit"><b>Deposit</b> ${fmt(dep)}</div>`;
-      target.innerHTML=`<div class="house-ledger-heading"><div><b>Mutasi ${escapeHtml(homes.find(h=>h.id===id)?.block||"")}</b><span class="tiny muted"> · ${year}</span></div><span class="pill">${sums.reduce((a,b)=>a+b.count,0)} catatan</span></div><div class="table-wrap"><table class="house-ledger-table"><thead><tr><th>Bulan</th><th>Kas RT</th><th>Air</th><th>Sampah</th><th>Total tunai</th><th>Total deposit</th></tr></thead><tbody>${sums.map((row,i)=>`<tr><td>${monthNames[i]}</td><td>${cell(row.cash.kas,row.deposit.kas)}</td><td>${cell(row.cash.air,row.deposit.air)}</td><td>${cell(row.cash.sampah,row.deposit.sampah)}</td><td><b>${fmt(row.cashTotal)}</b></td><td><b>${fmt(row.depositTotal)}</b></td></tr>`).join("")}<tr class="ledger-total"><td><b>Total ${year}</b></td><td>${cell(total.kas,total.depositKas)}</td><td>${cell(total.air,total.depositAir)}</td><td>${cell(total.sampah,total.depositSampah)}</td><td><b>${fmt(total.cash)}</b></td><td><b>${fmt(total.deposit)}</b></td></tr></tbody></table></div>`;
+      const total={kas:0,air:0,sampah:0,depositInKas:0,depositInAir:0,depositInSampah:0,depositUsedKas:0,depositUsedAir:0,depositUsedSampah:0,cash:0,depositIn:0,depositUsed:0};
+      sums.forEach(row=>{for(const cat of ["kas","air","sampah"]){total[cat]+=row.cash[cat];total["depositIn"+cat[0].toUpperCase()+cat.slice(1)]+=row.depositIn[cat];total["depositUsed"+cat[0].toUpperCase()+cat.slice(1)]+=row.depositUsed[cat];}total.cash+=row.cashTotal;total.depositIn+=row.depositInTotal;total.depositUsed+=row.depositUsedTotal;});
+      const cell=(cash,incoming,used)=>`<div class="ledger-cash"><b>Tunai</b> ${fmt(cash)}</div><div class="ledger-deposit-in"><b>Deposit masuk</b> ${fmt(incoming)}</div><div class="ledger-deposit"><b>Dari deposit</b> ${fmt(used)}</div>`;
+      const depositCards=["kas","air","sampah"].map(cat=>`<div class="deposit-balance-card"><span>${cat==="kas"?"Kas RT":cat==="air"?"Air":"Sampah"}</span><b>${fmt(currentDeposits?.[cat]||0)}</b></div>`).join("");
+      target.innerHTML=`<div class="house-ledger-heading"><div><b>Mutasi ${escapeHtml(homes.find(h=>h.id===id)?.block||"")}</b><span class="tiny muted"> · ${year}</span></div><span class="pill">${sums.reduce((a,b)=>a+b.count,0)} catatan</span></div><div class="deposit-balance-wrap"><b>Saldo deposit saat ini</b><div class="deposit-balance-grid">${depositCards}</div></div><div class="table-wrap"><table class="house-ledger-table"><thead><tr><th>Bulan</th><th>Kas RT</th><th>Air</th><th>Sampah</th><th>Total tunai</th><th>Deposit masuk</th><th>Deposit dipakai</th></tr></thead><tbody>${sums.map((row,i)=>`<tr><td>${monthNames[i]}</td><td>${cell(row.cash.kas,row.depositIn.kas,row.depositUsed.kas)}</td><td>${cell(row.cash.air,row.depositIn.air,row.depositUsed.air)}</td><td>${cell(row.cash.sampah,row.depositIn.sampah,row.depositUsed.sampah)}</td><td><b>${fmt(row.cashTotal)}</b></td><td><b>${fmt(row.depositInTotal)}</b></td><td><b>${fmt(row.depositUsedTotal)}</b></td></tr>`).join("")}<tr class="ledger-total"><td><b>Total ${year}</b></td><td>${cell(total.kas,total.depositInKas,total.depositUsedKas)}</td><td>${cell(total.air,total.depositInAir,total.depositUsedAir)}</td><td>${cell(total.sampah,total.depositInSampah,total.depositUsedSampah)}</td><td><b>${fmt(total.cash)}</b></td><td><b>${fmt(total.depositIn)}</b></td><td><b>${fmt(total.depositUsed)}</b></td></tr></tbody></table></div>`;
     }catch(err){target.innerHTML=`<div class="muted-note">Gagal memuat mutasi: ${escapeHtml(err.message)}</div>`;}
   };
   $("#loadHouseLedger").addEventListener("click",load);
