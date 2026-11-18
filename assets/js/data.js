@@ -41,15 +41,63 @@ export async function getBillingSettings() {
 }
 export async function saveBillingSettings(values) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
+  const previous = await getBillingSettings();
+  const openingBalances = {
+    kas: Math.max(0, Number(values.openingKas) || 0),
+    air: Math.max(0, Number(values.openingAir) || 0),
+    sampah: Math.max(0, Number(values.openingSampah) || 0)
+  };
   const clean = {
     kasMonthly: Math.max(0, Number(values.kasMonthly) || 0),
     waterAdmin: Math.max(0, Number(values.waterAdmin) || 0),
     waterPerM3: Math.max(0, Number(values.waterPerM3) || 0),
     sampahMonthly: Math.max(0, Number(values.sampahMonthly) || 0),
+    openingBalances,
     updatedAt: Date.now()
   };
-  await set(root("settings/billingRates"), clean);
+  const updates = {"settings/billingRates": clean};
+  for (const cat of ["kas","air","sampah"]) {
+    const oldOpening = Number(previous.openingBalances?.[cat]) || 0;
+    const nextOpening = openingBalances[cat];
+    const balanceRef = await get(root(`category_balances/${cat}`));
+    const current = balanceRef.exists() ? balanceRef.val() : {};
+    const currentBalance = Number(current.balance) || 0;
+    updates[`category_balances/${cat}`] = {
+      ...current,
+      openingBalance: nextOpening,
+      balance: currentBalance + (nextOpening - oldOpening),
+      updatedAt: Date.now()
+    };
+  }
+  const logRef = push(root("audit_logs"));
+  updates[`audit_logs/${logRef.key}`] = {type:"opening_balances_updated", openingBalances, createdAt:Date.now()};
+  await update(root(""), updates);
   return clean;
+}
+
+export async function createExpense({category, amount, date, description, proof, recordedBy}) {
+  if (!db) throw new Error("Firebase belum dikonfigurasi.");
+  if (!["kas","air","sampah"].includes(category)) throw new Error("Pilih sumber dana yang valid.");
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) throw new Error("Nominal pengeluaran harus lebih dari nol.");
+  if (!String(description||"").trim()) throw new Error("Keterangan pengeluaran wajib diisi.");
+  if (!String(proof||"").trim()) throw new Error("Bukti pengeluaran wajib diisi.");
+  const expenseRef = push(root("expenses"));
+  const txRef = push(root("transactions"));
+  const balSnap = await get(root(`category_balances/${category}`));
+  const balance = balSnap.exists() ? balSnap.val() : {};
+  const currentBalance = Number(balance.balance) || 0;
+  if (currentBalance < value) throw new Error("Saldo kategori tidak mencukupi. Periksa saldo awal atau pemasukan terlebih dahulu.");
+  const timestamp = Date.now();
+  const record = {id:expenseRef.key, category, amount:value, date:date || new Date().toISOString().slice(0,10), description:String(description).trim(), proof:String(proof).trim(), recordedBy:recordedBy || null, createdAt:timestamp};
+  const updates = {};
+  updates[`expenses/${expenseRef.key}`] = record;
+  updates[`transactions/${txRef.key}`] = {...record, id:txRef.key, type:"expense", referenceId:expenseRef.key};
+  updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
+  const logRef = push(root("audit_logs"));
+  updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
+  await update(root(""), updates);
+  return record;
 }
 
 
