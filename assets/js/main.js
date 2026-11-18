@@ -13,6 +13,23 @@ const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) ||
 const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
 function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const THEME_KEY="keuangan-rt-theme";
+function applyTheme(theme){
+  const chosen=theme==="dark"?"dark":"light";
+  document.documentElement.dataset.theme=chosen;
+  const button=$("#themeToggle");
+  if(button){
+    const dark=chosen==="dark";
+    button.setAttribute("aria-label",dark?"Aktifkan mode terang":"Aktifkan mode gelap");
+    button.title=dark?"Ganti ke mode terang":"Ganti ke mode gelap";
+    const label=button.querySelector(".theme-label");
+    if(label)label.textContent=dark?"Mode Terang":"Mode Gelap";
+  }
+}
+let savedTheme="light";
+try{savedTheme=localStorage.getItem(THEME_KEY)||"light";}catch{}
+applyTheme(savedTheme);
+
 let currentUser=null, currentProfile=null, page="dashboard", households={}, householdsLoadedAt=0;
 
 function setFirebaseStatus(state,label){
@@ -35,6 +52,11 @@ if(!firebaseConfigured||!db){
   });
 }
 
+$("#themeToggle").addEventListener("click",()=>{
+  const next=document.documentElement.dataset.theme==="dark"?"light":"dark";
+  applyTheme(next);
+  try{localStorage.setItem(THEME_KEY,next);}catch{}
+});
 $("#loginOpenBtn").addEventListener("click",()=>$("#loginDialog").showModal());
 $("#loginCloseBtn").addEventListener("click",()=>$("#loginDialog").close());
 $("#loginForm").addEventListener("submit", async e=>{
