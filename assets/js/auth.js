@@ -1,4 +1,4 @@
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import { auth, firebaseConfigured } from "./firebase.js";
 
 export function observeSession(callback) {
@@ -18,4 +18,11 @@ export async function login(email, password) {
 
 export async function logout() {
   if (auth) await signOut(auth);
+}
+
+export async function reauthenticate(password) {
+  if(!auth?.currentUser?.email) throw new Error("Sesi login tidak ditemukan. Silakan login ulang.");
+  const credential=EmailAuthProvider.credential(auth.currentUser.email,password);
+  await reauthenticateWithCredential(auth.currentUser,credential);
+  return true;
 }
