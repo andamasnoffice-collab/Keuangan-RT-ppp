@@ -403,7 +403,7 @@ async function renderWaterMeters(c){
     try{
       const result=await importWaterStatement({period,rows:parsedImportRows,recordedBy:currentUser?.uid});
       households=await getHouseholds();householdsLoadedAt=Date.now();
-      await refreshPublicSnapshot(period,households);
+      await refreshPublicSnapshot(monthKey(),households);
       toast(`Impor selesai: ${result.created} rumah baru, ${result.matched} rumah cocok, ${result.charges} tagihan air. Daftar publik diperbarui.`);
       await render();
     }catch(err){toast("Impor gagal: "+err.message);button.disabled=false;button.textContent="Impor ke Firebase";}
