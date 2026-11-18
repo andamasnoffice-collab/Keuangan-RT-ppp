@@ -159,6 +159,40 @@ export async function migrateMonthlyIndexes(recordedBy) {
 }
 
 const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+async function applyDepositToWaterBill(period,householdId,recordedBy){
+  const [bill,deposit,balance]=await Promise.all([
+    read(`bills/${period}/${householdId}/air`),
+    read(`deposits/${householdId}/air`),
+    read("category_balances/air")
+  ]);
+  if(!bill)return 0;
+  const due=Math.max(0,Number(bill.amount??bill.totalAmount??bill.remaining)||0);
+  const paid=Math.max(0,Number(bill.paidAmount)||0);
+  const available=Math.max(0,Number(deposit)||0);
+  const use=Math.min(available,Math.max(0,due-paid));
+  if(use<=0)return 0;
+  const now=Date.now(),depositAfter=available-use,remaining=Math.max(0,due-paid-use);
+  const paymentRef=push(root(`paymentsByMonth/${period}`));
+  const txRef=push(root(`transactionsByMonth/${period}`));
+  const ledgerRef=push(root("deposit_ledger"));
+  const updates={
+    [`deposits/${householdId}/air`]:depositAfter,
+    [`bills/${period}/${householdId}/air/paidAmount`]:paid+use,
+    [`bills/${period}/${householdId}/air/remaining`]:remaining,
+    [`bills/${period}/${householdId}/air/depositAppliedAmount`]:Number(bill.depositAppliedAmount||0)+use,
+    [`bills/${period}/${householdId}/air/status`]:remaining===0?"paid":"partial",
+    [`arrearsLedger/${householdId}/${period}/air`]:remaining,
+    [`deposit_ledger/${ledgerRef.key}`]:{householdId,category:"air",amount:-use,before:available,after:depositAfter,type:"deposit_auto_applied",date:period+"-01",period,paymentId:paymentRef.key,createdAt:now,recordedBy:recordedBy||null},
+    [`paymentsByMonth/${period}/${paymentRef.key}`]:{id:paymentRef.key,type:"automatic_deposit_application",householdId,period,date:period+"-01",items:[{cat:"air",cash:0,depositUsed:use,applied:use,surplus:0,remaining}],cashReceived:0,depositUsed:use,appliedToBills:use,surplusDeposit:0,method:"deposit_auto",note:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
+    [`transactionsByMonth/${period}/${txRef.key}`]:{id:txRef.key,type:"payment",category:"air",amount:use,householdId,referenceId:paymentRef.key,date:period+"-01",description:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
+    "category_balances/air":{...(balance||{}),balance:(Number(balance?.balance)||0)+use,income:(Number(balance?.income)||0)+use,updatedAt:now}
+  };
+  await update(ref(db),updates);
+  await applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"});
+  await setHouseholdArrearPeriod(householdId,period,"air",remaining);
+  return use;
+}
+
 export async function createMonthlyBills(period, recordedBy) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if (!validPeriod(period)) throw new Error("Periode tagihan tidak valid.");
