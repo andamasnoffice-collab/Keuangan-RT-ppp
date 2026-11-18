@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading } from "./data.js";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions, migrateMonthlyIndexes } from "./data.js";
 import { renderPaymentPage } from "./payments.js";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -11,7 +11,7 @@ const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) ||
 const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
 function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
-let currentUser=null, currentProfile=null, page="dashboard", households={};
+let currentUser=null, currentProfile=null, page="dashboard", households={}, householdsLoadedAt=0;
 
 function setFirebaseStatus(state,label){
   const el=$("#firebaseStatus"),text=$("#connectionLabel");
@@ -80,7 +80,7 @@ async function render(){
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
   try{
-    households=await getHouseholds();
+    if(!householdsLoadedAt || Date.now()-householdsLoadedAt>60000){households=await getHouseholds();householdsLoadedAt=Date.now();}
     if(page==="dashboard") await renderDashboard(c);
     else if(page==="publicBills") await renderPublicBills(c, true);
     else if(page==="households") renderHouseholds(c);
@@ -88,7 +88,7 @@ async function render(){
     else if(page==="deposits") await renderDeposits(c);
     else if(["kas","sampah","air"].includes(page)) await renderCategory(c,page);
     else if(page==="waterMeters") await renderWaterMeters(c);
-    else if(page==="expenses") renderExpenses(c);
+    else if(page==="expenses") await renderExpenses(c);
     else if(page==="transactions") await renderTransactions(c);
     else if(page==="reports") await renderReports(c);
     else if(page==="whatsapp") await renderWhatsAppPage(c,{households,currentUser,currentProfile,toast});
@@ -127,6 +127,17 @@ async function renderSettings(c){
     try{const saved=await saveBillingSettings(values); $("#settingsSavedAt").textContent=`Tersimpan: ${new Date(saved.updatedAt).toLocaleString("id-ID")}`; toast("Pengaturan tarif berhasil disimpan ke Firebase.");}
     catch(err){toast("Gagal menyimpan: "+err.message);}
     finally{button.disabled=false;button.textContent="Simpan pengaturan tarif";}
+  });
+  const migration=await read("settings/monthlyIndexMigration");
+  const migrationPanel=document.createElement("div");migrationPanel.className="panel";migrationPanel.style.marginTop="14px";
+  migrationPanel.innerHTML=`<h3>Optimasi arsip transaksi</h3><p class="muted tiny">Membuat indeks per bulan untuk transaksi, pengeluaran, dan pembayaran lama. Proses ini hanya dilakukan sekali. Data asli tidak dihapus.</p><p class="tiny muted" id="indexMigrationStatus">${migration?.status==="completed"?"Indeks bulanan sudah dibuat.":migration?.status==="processing"?"Migrasi sedang berjalan.":"Belum dijalankan."}</p><button id="migrateMonthlyIndexes" class="btn secondary" ${migration?.status==="completed"||migration?.status==="processing"?"disabled":""}>${migration?.status==="completed"?"Migrasi selesai":migration?.status==="processing"?"Sedang diproses":"Buat indeks arsip bulanan (sekali)"}</button>`;
+  c.appendChild(migrationPanel);
+  $("#migrateMonthlyIndexes").addEventListener("click",async()=>{
+    const button=$("#migrateMonthlyIndexes");
+    if(!confirm("Indeks bulanan akan dibuat dari arsip transaksi lama. Proses ini membaca arsip lama satu kali dan tidak menghapus data asli. Lanjutkan?"))return;
+    button.disabled=true;button.textContent="Memproses arsip…";
+    try{const result=await migrateMonthlyIndexes(currentUser?.uid);$("#indexMigrationStatus").textContent=`Selesai: ${result.counts.transactions} transaksi, ${result.counts.expenses} pengeluaran, ${result.counts.payments} pembayaran diindeks.`;button.textContent="Migrasi selesai";toast("Indeks arsip bulanan berhasil dibuat.");}
+    catch(err){$("#indexMigrationStatus").textContent="Migrasi gagal: "+err.message;button.disabled=false;button.textContent="Coba migrasi lagi";toast("Migrasi gagal: "+err.message);}
   });
 }
 
@@ -307,7 +318,7 @@ function houseDialog(existing=null){
     const initial= Math.max(0,Number(f.get("initialWaterMeter"))||0);
     const data={...(existing||{}),block:f.get("block").trim(),headName:f.get("headName").trim(),address:f.get("address").trim(),phone:f.get("phone").trim(),whatsapp:{...(existing?.whatsapp||{}),primaryNumber:f.get("whatsappNumber")||f.get("phone")||"",enabled:true},initialWaterMeter:editing?Number(existing.initialWaterMeter??initial):initial,currentWaterMeter:editing?Number(existing.currentWaterMeter??initial):initial,status:f.get("status"),members};
     if(existing)data.id=existing.id;
-    await saveHousehold(data);$("#genericDialog").close();toast(editing?"Perubahan rumah tersimpan.":"Data rumah tersimpan.");await render();
+    await saveHousehold(data);households=await getHouseholds();householdsLoadedAt=Date.now();$("#genericDialog").close();toast(editing?"Perubahan rumah tersimpan.":"Data rumah tersimpan.");await render();
   });
 }
 
@@ -359,7 +370,8 @@ async function renderCategory(c,cat){
   const stats=`<div class="grid stats">${card("Saldo operasional",money(bal.balance))}${card("Pemasukan",money(bal.income))}${card("Pengeluaran",money(bal.expense))}${card("Deposit warga",money(bal.deposit))}</div><div class="section-head"><h3>Tagihan belum dibayar · ${period}</h3><span class="pill warning">${money(due)}</span></div>`;
   c.innerHTML=stats+`<div class="muted-note">${labels[cat]}: tagihan dan pembayaran dikelola melalui tab Pembayaran. Deposit kategori ini hanya dapat digunakan untuk kategori yang sama.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
-function renderExpenses(c){
+async function renderExpenses(c){
+  const current=monthKey();
   c.innerHTML=`<div class="panel">
     <div class="section-head" style="margin-top:0"><h3>Catat pengeluaran</h3><span class="pill">Saldo terpisah</span></div>
     <p class="muted tiny">Pilih sumber dana yang benar. Pengeluaran akan mengurangi saldo kategori tersebut dan masuk ke riwayat transaksi.</p>
@@ -371,29 +383,39 @@ function renderExpenses(c){
       <label class="field full-row">Bukti / nomor kuitansi / tautan bukti<input name="proof" maxlength="500" placeholder="Nomor kuitansi atau tautan foto bukti" required></label>
     </div><button class="btn primary" type="submit">Simpan pengeluaran</button></form>
   </div>
-  <div class="panel" style="margin-top:14px"><h3>Riwayat pengeluaran</h3><div id="expenseHistory" class="table-wrap">Memuat…</div></div>`;
+  <div class="panel" style="margin-top:14px"><div class="section-head"><h3>Riwayat pengeluaran</h3><label class="field">Periode<input id="expensePeriod" type="month" value="${current}"></label></div><div id="expenseHistory" class="table-wrap">Memuat…</div></div>`;
   bindRupiahInputs($("#expenseForm"));
   const drawHistory=async()=>{
-    const rows=Object.values(await getExpenses()||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
-    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(({kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"})[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada pengeluaran.</td></tr>'}</tbody></table>`;
+    const period=$("#expensePeriod").value||current;
+    const rows=Object.values(await getExpenses(period)||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
+    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(({kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"})[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Tidak ada pengeluaran pada periode ini.</td></tr>'}</tbody></table>`;
   };
-  drawHistory();
+  await drawHistory();
+  $("#expensePeriod").addEventListener("change",drawHistory);
   $("#expenseForm").addEventListener("submit",async e=>{
     e.preventDefault(); const f=new FormData(e.currentTarget); const button=e.currentTarget.querySelector('button[type="submit"]');
     button.disabled=true; button.textContent="Menyimpan…";
     try{
       await createExpense({category:f.get("category"),amount:parseRupiah(f.get("amount")),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
       toast("Pengeluaran berhasil disimpan dan saldo kategori diperbarui.");
-      e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); await drawHistory();
+      e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); $("#expensePeriod").value=String(f.get("date")).slice(0,7); await drawHistory();
     }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
     finally{button.disabled=false;button.textContent="Simpan pengeluaran";}
   });
 }
 async function renderTransactions(c){
-  const tx=await read("transactions")||{};
-  const rows=Object.values(tx).sort((a,b)=>(b.date||0)-(a.date||0));
-  c.innerHTML=`<div class="section-head"><h3>Riwayat transaksi</h3></div><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${new Date(x.date||x.createdAt).toLocaleDateString("id-ID")}</td><td>${x.type||"-"}</td><td>${x.category||"-"}</td><td>${x.description||x.referenceId||"-"}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada transaksi.</td></tr>'}</tbody></table></div>`;
+  const current=monthKey();
+  c.innerHTML=`<div class="section-head"><h3>Riwayat transaksi</h3><label class="field">Periode<input id="transactionPeriod" type="month" value="${current}"></label></div><div id="transactionHistory" class="table-wrap">Memuat…</div>`;
+  const draw=async()=>{
+    const period=$("#transactionPeriod").value||current;
+    const tx=await getMonthTransactions(period);
+    const rows=Object.values(tx).sort((a,b)=>Number(b.createdAt||b.date||0)-Number(a.createdAt||a.date||0));
+    $("#transactionHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${new Date(x.date||x.createdAt).toLocaleDateString("id-ID")}</td><td>${escapeHtml(x.type||"-")}</td><td>${escapeHtml(x.category||"-")}</td><td>${escapeHtml(x.description||x.referenceId||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Tidak ada transaksi pada periode ini.</td></tr>'}</tbody></table>`;
+  };
+  await draw();
+  $("#transactionPeriod").addEventListener("change",draw);
 }
+
 async function renderReports(c){
   const sums=await read("category_balances")||{};
   c.innerHTML=`<div class="grid category-grid">${["kas","sampah","air"].map(k=>categoryCard(k.toUpperCase(),sums[k]?.balance,sums[k]?.income,sums[k]?.expense,sums[k]?.deposit)).join("")}</div><div class="muted-note" style="margin-top:16px">Laporan final akan menyediakan filter periode, ekspor CSV/Excel dan cetak PDF setelah alur transaksi tervalidasi.</div>`;
