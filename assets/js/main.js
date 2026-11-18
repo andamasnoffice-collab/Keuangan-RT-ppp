@@ -1,6 +1,6 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { login, logout, observeSession } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings } from "./data.js";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense } from "./data.js";
 import { renderPaymentPage } from "./payments.js";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -83,6 +83,10 @@ async function renderSettings(c){
         ${field("Iuran sampah per rumah / bulan","sampahMonthly",settings.sampahMonthly,"Iuran sampah tetap setiap bulan.")}
         ${field("Administrasi air per rumah / bulan","waterAdmin",settings.waterAdmin,"Beban administrasi tetap, di luar pemakaian air.")}
         ${field("Tarif pemakaian air per m³","waterPerM3",settings.waterPerM3,"Dikalikan selisih meter akhir dan meter awal.")}
+        <div class="full-row"><h4>Saldo awal operasional</h4><p class="muted tiny">Isi saldo awal kas, air, dan sampah. Perubahan saldo awal berikutnya menyesuaikan saldo berjalan berdasarkan selisihnya.</p></div>
+        ${field("Saldo awal Kas RT","openingKas",settings.openingBalances?.kas,"Saldo awal kas RT.")}
+        ${field("Saldo awal Kas Air","openingAir",settings.openingBalances?.air,"Saldo awal khusus pengelolaan air.")}
+        ${field("Saldo awal Sampah","openingSampah",settings.openingBalances?.sampah,"Saldo awal dana sampah.")}
       </div>
       <div class="summary-box" style="margin:8px 0 16px"><b>Rumus tagihan air</b><p class="tiny muted">Administrasi air + (pemakaian m³ × tarif per m³).</p><p class="tiny muted">Kas RT dan sampah menggunakan nominal tetap per rumah setiap bulan.</p></div>
       <button class="btn primary" type="submit">Simpan pengaturan tarif</button>
@@ -92,7 +96,7 @@ async function renderSettings(c){
     <div class="muted-note" style="margin-top:14px">Catatan: perubahan tarif tidak boleh menimpa tagihan bulan yang sudah terbentuk. Pengaturan ini menyimpan tarif ke Firebase; proses pembentukan tagihan bulanan otomatis dan pencatatan meter air merupakan tahap implementasi terpisah.</div>`;
   $("#billingSettingsForm").addEventListener("submit",async e=>{
     e.preventDefault(); const f=new FormData(e.currentTarget);
-    const values=Object.fromEntries(["kasMonthly","sampahMonthly","waterAdmin","waterPerM3"].map(k=>[k,f.get(k)]));
+    const values=Object.fromEntries(["kasMonthly","sampahMonthly","waterAdmin","waterPerM3","openingKas","openingAir","openingSampah"].map(k=>[k,f.get(k)]));
     const button=e.currentTarget.querySelector('button[type="submit"]'); button.disabled=true; button.textContent="Menyimpan…";
     try{const saved=await saveBillingSettings(values); $("#settingsSavedAt").textContent=`Tersimpan: ${new Date(saved.updatedAt).toLocaleString("id-ID")}`; toast("Pengaturan tarif berhasil disimpan ke Firebase.");}
     catch(err){toast("Gagal menyimpan: "+err.message);}
@@ -235,9 +239,9 @@ function renderHouseholds(c){
 }
 function houseRow(h){return `<tr><td><b>${h.block||"-"}</b></td><td>${h.headName||"-"}</td><td>${h.address||"-"}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${h.status||"active"}</span></td></tr>`;}
 function houseDialog(){
-  $("#dialogContent").innerHTML=`<h3>Tambah rumah / keluarga</h3><form id="houseForm"><div class="form-grid"><label class="field">Blok / nomor rumah<input name="block" required></label><label class="field">Nama kepala keluarga<input name="headName" required></label><label class="field full-row">Alamat lengkap<input name="address" required></label><label class="field">Nomor HP<input name="phone"></label><label class="field">Nomor WhatsApp<input name="whatsappNumber" placeholder="Contoh: 081234567890"></label><label class="field">Status<select name="status"><option value="active">Dihuni</option><option value="empty">Kosong</option><option value="rented">Kontrak</option></select></label><label class="field full-row">Anggota keluarga (satu nama per baris, opsional)<textarea name="members" rows="4" placeholder="Nama - hubungan&#10;Siti - Istri&#10;Budi - Anak"></textarea></label></div><button class="btn primary full">Simpan rumah</button></form>`;
+  $("#dialogContent").innerHTML=`<h3>Tambah rumah / keluarga</h3><form id="houseForm"><div class="form-grid"><label class="field">Blok / nomor rumah<input name="block" required></label><label class="field">Nama kepala keluarga<input name="headName" required></label><label class="field full-row">Alamat lengkap<input name="address" required></label><label class="field">Nomor HP<input name="phone"></label><label class="field">Nomor WhatsApp<input name="whatsappNumber" placeholder="Contoh: 081234567890"></label><label class="field">Meteran air awal (m³)<input name="initialWaterMeter" type="number" min="0" step="0.01" value="0" required><small class="muted tiny">Angka meter saat rumah pertama kali didaftarkan.</small></label><label class="field">Status<select name="status"><option value="active">Dihuni</option><option value="empty">Kosong</option><option value="rented">Kontrak</option></select></label><label class="field full-row">Anggota keluarga (satu nama per baris, opsional)<textarea name="members" rows="4" placeholder="Nama - hubungan&#10;Siti - Istri&#10;Budi - Anak"></textarea></label></div><button class="btn primary full">Simpan rumah</button></form>`;
   $("#genericDialog").showModal();
-  $("#houseForm").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.target);const members={};String(f.get("members")||"").split("\n").filter(Boolean).forEach((line,i)=>{const [name,relation]=line.split("-").map(x=>x.trim());members[`m${i+1}`]={name,relation:relation||"lainnya",status:"active"};});members.head={name:f.get("headName"),relation:"kepala_keluarga",status:"active"};await saveHousehold({block:f.get("block"),headName:f.get("headName"),address:f.get("address"),phone:f.get("phone"),whatsapp:{primaryNumber:f.get("whatsappNumber")||f.get("phone")||"",enabled:true},status:f.get("status"),members});$("#genericDialog").close();toast("Data rumah tersimpan.");render();});
+  $("#houseForm").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.target);const members={};String(f.get("members")||"").split("\n").filter(Boolean).forEach((line,i)=>{const [name,relation]=line.split("-").map(x=>x.trim());members[`m${i+1}`]={name,relation:relation||"lainnya",status:"active"};});members.head={name:f.get("headName"),relation:"kepala_keluarga",status:"active"};await saveHousehold({block:f.get("block"),headName:f.get("headName"),address:f.get("address"),phone:f.get("phone"),whatsapp:{primaryNumber:f.get("whatsappNumber")||f.get("phone")||"",enabled:true},initialWaterMeter:Math.max(0,Number(f.get("initialWaterMeter"))||0),currentWaterMeter:Math.max(0,Number(f.get("initialWaterMeter"))||0),status:f.get("status"),members});$("#genericDialog").close();toast("Data rumah tersimpan.");render();});
 }
 async function renderDeposits(c){
   const data=await read("deposits")||{};
@@ -251,7 +255,35 @@ async function renderCategory(c,cat){
   const due=Object.values(bills).reduce((s,h)=>s+Number(h?.[cat]?.remaining||0),0);
   c.innerHTML=`<div class="grid stats">${card("Saldo operasional",money(bal.balance))}${card("Pemasukan",money(bal.income))}${card("Pengeluaran",money(bal.expense))}${card("Deposit warga",money(bal.deposit))}</div><div class="section-head"><h3>Tagihan belum dibayar · ${monthKey()}</h3><span class="pill warning">${money(due)}</span></div><div class="muted-note">Tagihan dan pembayaran kategori ini dikelola melalui tab Pembayaran. Deposit kategori ini hanya dapat digunakan untuk kategori yang sama.</div>`;
 }
-function renderExpenses(c){c.innerHTML=`<div class="panel"><h3>Pengeluaran</h3><p class="muted">Pencatatan pengeluaran akan dihubungkan ke kategori kas, sampah, atau air agar saldo masing-masing tetap terpisah.</p><button class="btn secondary" id="expenseInfo">Lihat ketentuan pencatatan</button></div>`;$("#expenseInfo").onclick=()=>toast("Setiap pengeluaran wajib memiliki kategori dan bukti.");}
+function renderExpenses(c){
+  c.innerHTML=`<div class="panel">
+    <div class="section-head" style="margin-top:0"><h3>Catat pengeluaran</h3><span class="pill">Saldo terpisah</span></div>
+    <p class="muted tiny">Pilih sumber dana yang benar. Pengeluaran akan mengurangi saldo kategori tersebut dan masuk ke riwayat transaksi.</p>
+    <form id="expenseForm"><div class="form-grid">
+      <label class="field">Sumber dana<select name="category" required><option value="kas">Kas RT</option><option value="air">Kas Air</option><option value="sampah">Kas Sampah</option></select></label>
+      <label class="field">Nominal (Rp)<input name="amount" type="number" min="1" step="1" required></label>
+      <label class="field">Tanggal<input name="date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
+      <label class="field full-row">Keterangan pengeluaran<input name="description" maxlength="180" placeholder="Contoh: pembelian perlengkapan kebersihan" required></label>
+      <label class="field full-row">Bukti / nomor kuitansi / tautan bukti<input name="proof" maxlength="500" placeholder="Nomor kuitansi atau tautan foto bukti" required></label>
+    </div><button class="btn primary" type="submit">Simpan pengeluaran</button></form>
+  </div>
+  <div class="panel" style="margin-top:14px"><h3>Riwayat pengeluaran</h3><div id="expenseHistory" class="table-wrap">Memuat…</div></div>`;
+  const drawHistory=async()=>{
+    const rows=Object.values(await getExpenses()||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
+    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(({kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"})[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada pengeluaran.</td></tr>'}</tbody></table>`;
+  };
+  drawHistory();
+  $("#expenseForm").addEventListener("submit",async e=>{
+    e.preventDefault(); const f=new FormData(e.currentTarget); const button=e.currentTarget.querySelector('button[type="submit"]');
+    button.disabled=true; button.textContent="Menyimpan…";
+    try{
+      await createExpense({category:f.get("category"),amount:f.get("amount"),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
+      toast("Pengeluaran berhasil disimpan dan saldo kategori diperbarui.");
+      e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); await drawHistory();
+    }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
+    finally{button.disabled=false;button.textContent="Simpan pengeluaran";}
+  });
+}
 async function renderTransactions(c){
   const tx=await read("transactions")||{};
   const rows=Object.values(tx).sort((a,b)=>(b.date||0)-(a.date||0));
