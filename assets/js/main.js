@@ -2,7 +2,7 @@ import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
 import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js";
-import { renderPaymentPage } from "./payments.js?v=20261118-3";
+import { renderPaymentPage } from "./payments.js?v=20261118-4";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
 const $ = s => document.querySelector(s);
