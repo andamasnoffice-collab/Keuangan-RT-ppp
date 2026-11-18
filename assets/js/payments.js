@@ -28,7 +28,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       const bill=allBills[id]||{};
       box.innerHTML=`
         <div class="section-head payment-period"><h3>Tagihan periode ${esc(monthKey)}</h3><span class="pill">Deposit otomatis diperhitungkan</span></div>
-        <div class="payment-categories">${categories.map(cat=>{
+        <div class="summary-box payment-month-total" style="margin:12px 0 16px;padding:16px;border:1px solid var(--border,#dbe4ee);border-radius:14px;background:#eef5f8"><div class="muted tiny">TOTAL HARUS DIBAYARKAN BULAN INI (SETELAH DEPOSIT)</div><div id="sumMonthDue" style="font-size:clamp(24px,4vw,32px);font-weight:800;margin-top:5px">${money(0)}</div><small class="muted">Jumlah sisa Kas RT, Kas Air, dan Uang Sampah setelah deposit kategori masing-masing diperhitungkan.</small></div>\n        <div class="payment-categories">${categories.map(cat=>{
           const b=bill[cat]||{};
           const gross=num(b.remaining??(num(b.amount)-num(b.paidAmount)));
           const deposit=num(dep?.[cat]);
@@ -71,7 +71,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           card.querySelector(".payment-result").textContent=extra>0?`Lebih bayar menjadi deposit: ${money(extra)}`:remaining>0?`Kurang bayar: ${money(remaining)}`:due===0?"Tidak ada pembayaran manual yang diperlukan.":"Tagihan kategori ini lunas.";
           gross+=num(card.dataset.gross);depositUsed+=depUsed;cash+=paid;surplus+=extra;short+=remaining;
         });
-        box.querySelector("#sumGross").textContent=money(gross);
+        box.querySelector("#sumMonthDue").textContent=money(cards.reduce((sum,card)=>sum+num(card.dataset.net),0));\n        box.querySelector("#sumGross").textContent=money(gross);
         box.querySelector("#sumDeposit").textContent=money(depositUsed);
         box.querySelector("#sumCash").textContent=money(cash);
         box.querySelector("#sumSurplus").textContent=money(surplus);
