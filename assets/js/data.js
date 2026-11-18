@@ -423,6 +423,7 @@ export async function createExpense({category, amount, date, description, proof,
  */
 export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary, arrearsLedger={}, announcement=null) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
+  if(announcement===null) announcement=await read("public_views/announcement");
   const allOutstanding={};
   let totalOutstanding=0;
   const householdIds=new Set([...Object.keys(arrearsSummary||{}),...Object.keys(arrearsLedger||{})]);
