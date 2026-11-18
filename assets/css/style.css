@@ -426,3 +426,25 @@ td{color:var(--text)}
  .theme-toggle svg{width:18px;height:18px}
  .stat,.panel,.card{border-radius:15px}
 }
+
+
+/* Sidebar taxonomy and reliable theme control */
+.sidebar-nav{display:grid;gap:15px;align-content:start}
+.nav-group{display:grid;gap:3px}
+.nav-group-title{padding:5px 13px 4px;color:#89a6b9;font-size:9px;font-weight:800;letter-spacing:.13em}
+.nav-item{min-height:42px;padding:10px 12px;border-radius:11px}
+.nav-item svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.theme-toggle{appearance:none;-webkit-appearance:none;display:inline-flex!important;align-items:center;justify-content:center;gap:7px;min-width:42px;min-height:38px;padding:8px 11px;border:1px solid var(--line)!important;border-radius:12px!important;background:var(--surface-soft)!important;color:var(--text)!important;font-size:11px;font-weight:800;line-height:1;box-shadow:none!important}
+.theme-toggle .theme-symbol{display:inline-grid;place-items:center;width:19px;height:19px;font-size:21px;line-height:1;color:var(--text)}
+.theme-toggle .theme-label{display:inline!important;color:var(--text);font-size:11px}
+:root[data-theme="dark"] .theme-toggle .theme-symbol{color:#f5c96b}
+:root:not([data-theme="dark"]) .theme-toggle .theme-symbol{color:#d18b25}
+@media(max-width:760px){
+ .sidebar{overflow-y:auto;padding-bottom:24px}
+ .sidebar-nav{gap:12px}
+ .nav-group{gap:2px}
+ .nav-group-title{padding-top:8px}
+ .theme-toggle{width:auto!important;min-width:40px!important;height:38px!important;padding:0 9px!important}
+ .theme-toggle .theme-label{display:none!important}
+ .user-area>span#userLabel{display:none}
+}
