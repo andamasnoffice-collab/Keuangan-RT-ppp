@@ -280,8 +280,8 @@ async function renderDashboard(c){
   });
   $("#publishPublicBtn").addEventListener("click", async ()=>{
     try{
-      const [financeSummary,arrearsSummary]=await Promise.all([read("financeSummaryByMonth"),read("arrearsSummary")]);
-      await publishPublicSnapshot(monthKey(),households,balances,financeSummary||{},arrearsSummary||{});
+      const [financeSummary,arrearsSummary,arrearsLedger]=await Promise.all([read("financeSummaryByMonth"),read("arrearsSummary"),read("arrearsLedger")]);
+      await publishPublicSnapshot(monthKey(),households,balances,financeSummary||{},arrearsSummary||{},arrearsLedger||{});
       toast("Informasi publik berhasil diperbarui.");
     }catch(e){toast("Gagal memperbarui tampilan publik: "+e.message);}
   });
