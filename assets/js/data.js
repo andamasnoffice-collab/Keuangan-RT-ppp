@@ -421,15 +421,37 @@ export async function createExpense({category, amount, date, description, proof,
  * Never includes resident names, phone numbers, family members, or payment details.
  * Public pages read only /public_views; private source nodes remain auth-only.
  */
-export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary) {
+export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary, arrearsLedger={}) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   const allOutstanding={};
   let totalOutstanding=0;
-  for(const [id,value] of Object.entries(arrearsSummary||{})){
-    const total=Math.max(0,Number(value?.total)||0);
-    if(!total) continue;
+  const householdIds=new Set([...Object.keys(arrearsSummary||{}),...Object.keys(arrearsLedger||{})]);
+  for(const id of householdIds){
+    const ledger=arrearsLedger?.[id]||{};
+    const validPeriods=Object.keys(ledger).filter(p=>validPeriod(p)&&p<=currentPeriod).sort();
+    const hasLedger=validPeriods.length>0;
+    const value=arrearsSummary?.[id]||{};
+    const totals={kas:0,air:0,sampah:0,periodCount:0};
+    if(hasLedger){
+      for(const period of validPeriods){
+        const row=ledger[period]||{};
+        let hasDue=false;
+        for(const cat of ["kas","air","sampah"]){
+          const amount=Math.max(0,Number(row?.[cat])||0);
+          totals[cat]+=amount;
+          if(amount>0)hasDue=true;
+        }
+        if(hasDue)totals.periodCount++;
+      }
+    }else{
+      // Compatibility fallback for households that still have summary data but no monthly ledger.
+      for(const cat of ["kas","air","sampah"]) totals[cat]=Math.max(0,Number(value?.[cat])||0);
+      totals.periodCount=Math.max(0,Number(value?.periodCount)||0);
+    }
+    const total=totals.kas+totals.air+totals.sampah;
+    if(!total)continue;
     const house=households?.[id]||{};
-    allOutstanding[id]={label:String(house.block||"Rumah terdaftar").slice(0,60),kas:Math.max(0,Number(value.kas)||0),air:Math.max(0,Number(value.air)||0),sampah:Math.max(0,Number(value.sampah)||0),total};
+    allOutstanding[id]={label:String(house.block||"Rumah terdaftar").slice(0,60),kas:totals.kas,air:totals.air,sampah:totals.sampah,total,periodCount:totals.periodCount};
     totalOutstanding+=total;
   }
   const categoryTotals={};
