@@ -211,6 +211,71 @@ export async function createMonthlyBills(period, recordedBy) {
   }
 }
 
+export async function importWaterStatement({period,rows,recordedBy}) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  if(!validPeriod(period)) throw new Error("Periode impor tidak valid.");
+  if(!Array.isArray(rows)||!rows.length) throw new Error("Tidak ada baris data untuk diimpor.");
+  const lockRef=root(`water_import_runs/${period}`);
+  const claim=await runTransaction(lockRef,current=>{
+    if(current && current.status!=="failed") return;
+    return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null,rowCount:rows.length};
+  },{applyLocally:false});
+  if(!claim.committed) throw new Error(claim.snapshot.val()?.status==="completed"?"Data meter periode ini sudah pernah diimpor.":"Impor periode ini sedang diproses atau perlu pemeriksaan.");
+  try{
+    const homes=await getHouseholds();
+    const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+    const byBlock=new Map(Object.entries(homes).map(([id,h])=>[norm(h.block),{id,...h}]));
+    const updates={},now=Date.now();
+    let created=0,matched=0,meters=0,charges=0,needsReview=0;
+    const seen=new Set();
+    for(const row of rows){
+      const block=String(row.block||"").trim();
+      if(!block) {needsReview++;continue;}
+      const key=norm(block);
+      if(seen.has(key)) throw new Error(`Blok duplikat dalam file: ${block}`);
+      seen.add(key);
+      let house=byBlock.get(key);
+      if(!house){
+        const id=push(root("households")).key;
+        const initial=Number.isFinite(Number(row.previousMeter))?Number(row.previousMeter):0;
+        house={id,block,headName:String(row.headName||"Belum dilengkapi").trim()||"Belum dilengkapi",address:"Perlu dilengkapi",phone:"",whatsapp:{primaryNumber:"",enabled:false},initialWaterMeter:initial,currentWaterMeter:initial,status:"active",members:{head:{name:String(row.headName||"Belum dilengkapi"),relation:"kepala_keluarga",status:"active"}},createdAt:now,updatedAt:now,importedFrom:"water_statement"};
+        updates[`households/${id}`]=house;byBlock.set(key,house);created++;
+      }else matched++;
+      const hasMeters=row.previousMeter!==null&&row.previousMeter!==""&&row.currentMeter!==null&&row.currentMeter!=="";
+      const previous=hasMeters?Number(row.previousMeter):null;
+      const current=hasMeters?Number(row.currentMeter):null;
+      if(hasMeters&&(!Number.isFinite(previous)||!Number.isFinite(current)||current<previous)) throw new Error(`Angka meter tidak valid untuk blok ${block}`);
+      const usage=hasMeters?Number((current-previous).toFixed(3)):Number(row.usage)||0;
+      const amount=row.amount===null||row.amount===""||row.amount===undefined?null:Number(row.amount);
+      if(amount!==null&&(!Number.isFinite(amount)||amount<0))throw new Error(`Nominal tagihan tidak valid untuk blok ${block}`);
+      if(hasMeters||amount!==null){
+        const reading={period,householdId:house.id,previousMeter:previous,currentMeter:current,usage,rate:null,adminAmount:null,usageAmount:null,totalAmount:amount,source:"imported_statement",recordedBy:recordedBy||null,createdAt:now,amountNeedsReview:amount===null};
+        updates[`water_readings/${period}/${house.id}`]=reading;meters++;
+        if(amount!==null){
+          const existingBill=await read(`bills/${period}/${house.id}`);
+          if(existingBill?.air)throw new Error(`Tagihan air ${block} periode ${period} sudah ada. Impor dibatalkan agar tidak menimpa pembayaran.`);
+          const air={amount,adminAmount:null,usage,previousMeter:previous,currentMeter:current,paidAmount:0,remaining:amount,status:amount>0?"unpaid":"paid",createdAt:now,source:"imported_statement"};
+          updates[`bills/${period}/${house.id}/air`]=air;
+          updates[`arrearsLedger/${house.id}/${period}/air`]=amount;
+          charges++;
+        }else needsReview++;
+        if(hasMeters){
+          const currentLatest=Number(house.currentWaterMeter??house.initialWaterMeter)||0;
+          if(!house.currentWaterMeter||currentLatest<=current){
+            updates[`households/${house.id}/currentWaterMeter`]=current;
+            updates[`households/${house.id}/updatedAt`]=now;
+          }
+        }
+      }else needsReview++;
+    }
+    updates[`water_import_runs/${period}`]={status:"completed",period,completedAt:now,recordedBy:recordedBy||null,rowCount:rows.length,created,matched,meters,charges,needsReview};
+    await update(ref(db),updates);
+    return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
+  }catch(error){
+    await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
+    throw error;
+  }
+}
 export async function saveWaterReading({period,householdId,currentMeter,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
   if(!validPeriod(period)) throw new Error("Periode tidak valid.");
