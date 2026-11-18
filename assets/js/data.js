@@ -29,15 +29,59 @@ export async function getHouseholds() {
 export async function getMonthBills(monthKey) {
   return await read(`bills/${monthKey}`) || {};
 }
-export async function getPayments() {
-  return await read("payments") || {};
+export async function getPayments(period=null) {
+  return period ? await read(`paymentsByMonth/${period}`) || {} : await read("payments") || {};
 }
-export async function getExpenses() {
-  return await read("expenses") || {};
+export async function getExpenses(period=null) {
+  return period ? await read(`expensesByMonth/${period}`) || {} : await read("expenses") || {};
+}
+export async function getMonthTransactions(period) {
+  if(!validPeriod(period)) throw new Error("Periode transaksi tidak valid.");
+  return await read(`transactionsByMonth/${period}`) || {};
+}
+export async function migrateMonthlyIndexes(recordedBy) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  const lock=root("settings/monthlyIndexMigration");
+  const claim=await runTransaction(lock,current=>{
+    if(current?.status==="completed"||current?.status==="processing") return;
+    return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null};
+  },{applyLocally:false});
+  if(!claim.committed) throw new Error("Migrasi indeks sudah selesai atau sedang dijalankan. Tidak perlu klik lagi.");
+  try{
+    const [transactions,expenses,payments]=await Promise.all([
+      read("transactions"),read("expenses"),read("payments")
+    ]);
+    const updates={};
+    const periodOf=row=>{
+      const raw=row?.date||row?.createdAt||row?.timestamp;
+      if(typeof raw==="number") return new Date(raw).toISOString().slice(0,7);
+      const s=String(raw||"");
+      if(/^\d{4}-\d{2}/.test(s)) return s.slice(0,7);
+      const n=Number(s);
+      return Number.isFinite(n)&&n>0?new Date(n).toISOString().slice(0,7):"";
+    };
+    const add=(base,rows)=>{
+      for(const [id,row] of Object.entries(rows||{})){
+        const period=periodOf(row);
+        if(!validPeriod(period)) continue;
+        updates[`${base}/${period}/${id}`]=row;
+      }
+    };
+    add("transactionsByMonth",transactions);
+    add("expensesByMonth",expenses);
+    add("paymentsByMonth",payments);
+    await update(ref(db),updates);
+    const result={status:"completed",completedAt:Date.now(),recordedBy:recordedBy||null,counts:{transactions:Object.keys(transactions||{}).length,expenses:Object.keys(expenses||{}).length,payments:Object.keys(payments||{}).length}};
+    await set(lock,result);
+    return result;
+  }catch(error){
+    await set(lock,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
+    throw error;
+  }
 }
 
 
-const validPeriod = value => /^\\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 export async function createMonthlyBills(period, recordedBy) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if (!validPeriod(period)) throw new Error("Periode tagihan tidak valid.");
@@ -173,6 +217,9 @@ export async function createExpense({category, amount, date, description, proof,
   const updates = {};
   updates[`expenses/${expenseRef.key}`] = record;
   updates[`transactions/${txRef.key}`] = {...record, id:txRef.key, type:"expense", referenceId:expenseRef.key};
+  const period=String(record.date).slice(0,7);
+  updates[`expensesByMonth/${period}/${expenseRef.key}`]=record;
+  updates[`transactionsByMonth/${period}/${txRef.key}`]={...record,id:txRef.key,type:"expense",referenceId:expenseRef.key};
   updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
