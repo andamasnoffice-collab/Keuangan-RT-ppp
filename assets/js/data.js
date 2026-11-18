@@ -225,7 +225,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     const homes=await getHouseholds();
     const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
     const byBlock=new Map(Object.entries(homes).map(([id,h])=>[norm(h.block),{id,...h}]));
-    const updates={},now=Date.now();
+    const updates={},now=Date.now(),createdIds=new Set();
     let created=0,matched=0,meters=0,charges=0,needsReview=0;
     const seen=new Set();
     for(const row of rows){
@@ -239,7 +239,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
         const id=push(root("households")).key;
         const initial=Number.isFinite(Number(row.previousMeter))?Number(row.previousMeter):0;
         house={id,block,headName:String(row.headName||"Belum dilengkapi").trim()||"Belum dilengkapi",address:"Perlu dilengkapi",phone:"",whatsapp:{primaryNumber:"",enabled:false},initialWaterMeter:initial,currentWaterMeter:initial,status:"active",members:{head:{name:String(row.headName||"Belum dilengkapi"),relation:"kepala_keluarga",status:"active"}},createdAt:now,updatedAt:now,importedFrom:"water_statement"};
-        updates[`households/${id}`]=house;byBlock.set(key,house);created++;
+        updates[`households/${id}`]=house;byBlock.set(key,house);createdIds.add(id);created++;
       }else matched++;
       const hasMeters=row.previousMeter!==null&&row.previousMeter!==""&&row.currentMeter!==null&&row.currentMeter!=="";
       const previous=hasMeters?Number(row.previousMeter):null;
@@ -262,8 +262,14 @@ export async function importWaterStatement({period,rows,recordedBy}) {
         if(hasMeters){
           const currentLatest=Number(house.currentWaterMeter??house.initialWaterMeter)||0;
           if(!house.currentWaterMeter||currentLatest<=current){
-            updates[`households/${house.id}/currentWaterMeter`]=current;
-            updates[`households/${house.id}/updatedAt`]=now;
+            if(createdIds.has(house.id)){
+              // New household is already written at its parent path in this same multipath update.
+              house.currentWaterMeter=current;
+              house.updatedAt=now;
+            }else{
+              updates[`households/${house.id}/currentWaterMeter`]=current;
+              updates[`households/${house.id}/updatedAt`]=now;
+            }
           }
         }
       }else needsReview++;
