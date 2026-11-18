@@ -415,13 +415,35 @@ async function renderWaterMeters(c){
   });
 }
 async function renderCategory(c,cat){
-  const bal=(await read(`category_balances/${cat}`))||{};
-  const period=monthKey();
+  const [bal,monthly,settings]=await Promise.all([
+    read(`category_balances/${cat}`),
+    read("financeSummaryByMonth"),
+    read("settings/billingRates")
+  ]);
+  const balance=bal||{},period=monthKey(),year=Number(period.slice(0,4));
   const bills=await getMonthBills(period);
-  const due=Object.values(bills).reduce((s,h)=>s+Number(h?.[cat]?.remaining||0),0);
-  const labels={kas:"Kas RT",sampah:"Uang Sampah",air:"Kas Air"};
-  const stats=`<div class="grid stats">${card("Saldo operasional",money(bal.balance))}${card("Pemasukan",money(bal.income))}${card("Pengeluaran",money(bal.expense))}${card("Deposit warga",money(bal.deposit))}</div><div class="section-head"><h3>Tagihan belum dibayar · ${period}</h3><span class="pill warning">${money(due)}</span></div>`;
-  c.innerHTML=stats+`<div class="muted-note">${labels[cat]}: tagihan dan pembayaran dikelola melalui tab Pembayaran. Deposit kategori ini hanya dapat digunakan untuk kategori yang sama.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
+  const due=Object.values(bills).reduce((sum,h)=>sum+Number(h?.[cat]?.remaining||0),0);
+  const labels={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
+  const opening=Number(settings?.openingBalances?.[cat])||0;
+  const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  let running=opening,totalIn=0,totalOut=0;
+  const rows=monthNames.map((name,index)=>{
+    const key=`${year}-${String(index+1).padStart(2,"0")}`;
+    const data=monthly?.[key]?.byCategory?.[cat]||{};
+    const income=Math.max(0,Number(data.income)||0),expense=Math.max(0,Number(data.expenses)||0);
+    const start=running,end=start+income-expense;
+    running=end;totalIn+=income;totalOut+=expense;
+    const future=key>period;
+    return `<tr class="${future?"month-future":""}"><td><b>${name}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount">${money(end)}</td></tr>`;
+  }).join("");
+  const stats=`<div class="grid stats">${card("Saldo operasional saat ini",money(balance.balance))}${card("Pemasukan tercatat",money(balance.income))}${card("Pengeluaran tercatat",money(balance.expense))}${card("Deposit warga",money(balance.deposit))}</div>
+  <div class="section-head"><div><h3>Tagihan belum dibayar · ${period}</h3><p class="tiny muted">Sisa kewajiban ${labels[cat]}</p></div><span class="pill warning">${money(due)}</span></div>`;
+  const ledger=`<section class="panel monthly-ledger">
+    <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Ringkasan pemasukan, pengeluaran, dan saldo berjalan per bulan</p></div><span class="pill">Januari–Desember</span></div>
+    <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows}<tr class="ledger-total"><td><b>Akumulasi tahun ini</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
+    <p class="tiny muted ledger-note">Saldo awal Januari mengikuti saldo awal yang tercatat pada Pengaturan. Saldo akhir setiap bulan dihitung dari saldo awal + pemasukan − pengeluaran. Bulan mendatang akan bernilai Rp 0 sampai ada mutasi.</p>
+  </section>`;
+  c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit warga ditampilkan terpisah dan tidak dijumlahkan sebagai pemasukan operasional.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
 async function renderExpenses(c){
   const current=monthKey();
