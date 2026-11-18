@@ -308,7 +308,7 @@ function houseDialog(existing=null){
     const initial= Math.max(0,Number(f.get("initialWaterMeter"))||0);
     const openingArrears=editing?(existing.openingArrears||{kas:0,air:0,sampah:0}):{kas:parseRupiah(f.get("openingArrearsKas")),air:parseRupiah(f.get("openingArrearsAir")),sampah:parseRupiah(f.get("openingArrearsSampah"))};
     const openingArrearsPeriod=editing?(existing.openingArrearsPeriod||null):String(f.get("openingArrearsPeriod")||"");
-    if(!editing&&!/^\\d{4}-(0[1-9]|1[0-2])$/.test(openingArrearsPeriod))throw new Error("Periode awal tunggakan harus dipilih.");
+    if(!editing&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(openingArrearsPeriod))throw new Error("Periode awal tunggakan harus dipilih.");
     const data={...(existing||{}),block:f.get("block").trim(),headName:f.get("headName").trim(),address:f.get("address").trim(),phone:f.get("phone").trim(),whatsapp:{...(existing?.whatsapp||{}),primaryNumber:f.get("whatsappNumber")||f.get("phone")||"",enabled:true},initialWaterMeter:editing?Number(existing.initialWaterMeter??initial):initial,currentWaterMeter:editing?Number(existing.currentWaterMeter??initial):initial,status:f.get("status"),members,openingArrears,openingArrearsPeriod};
     if(existing)data.id=existing.id;
     const id=await saveHousehold(data);
