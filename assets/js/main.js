@@ -60,7 +60,7 @@ async function render(){
     if(page==="dashboard") await renderDashboard(c);
     else if(page==="publicBills") await renderPublicBills(c, true);
     else if(page==="households") renderHouseholds(c);
-    else if(page==="payments") await renderPaymentPage(c,{households,monthKey:monthKey(),money,toast});
+    else if(page==="payments") await renderPaymentPage(c,{households,monthKey:monthKey(),money,toast,currentUser});
     else if(page==="deposits") await renderDeposits(c);
     else if(["kas","sampah","air"].includes(page)) await renderCategory(c,page);
     else if(page==="expenses") renderExpenses(c);
