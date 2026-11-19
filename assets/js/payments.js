@@ -1,6 +1,6 @@
 import { ref, push, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod } from "./data.js?v=20261118-auto-deposit3";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, assertDatabaseOnline, writeAndVerify } from "./data.js?v=20261118-auto-deposit3";
 
 const categories=["kas","air","sampah"];
 const blockCollator=new Intl.Collator("id",{numeric:true,sensitivity:"base"});
@@ -141,7 +141,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items:entries.map(x=>({...x})),cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:monthKey,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-          await update(ref(db),updates);
+          await writeAndVerify(updates,[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]);
           for(const item of summaryDeltas) await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
           for(const cat of categories){
             for(const row of periodBills){
