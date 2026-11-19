@@ -25,7 +25,29 @@ export async function read(path) {
 }
 export function watch(path, callback, onError=console.error) {
   if (!db) return () => {};
-  return onValue(root(path), s => callback(s.exists()?s.val():null), onError);
+  let cancelled=false, stopConnection=null, stopValue=null;
+  const start=async()=>{
+    if(cancelled||stopValue) return;
+    try {
+      await assertDatabaseOnline();
+      const initial=await get(root(path));
+      if(cancelled) return;
+      callback(initial.exists()?initial.val():null);
+      stopValue=onValue(root(path), snap=>{
+        if(!cancelled) callback(snap.exists()?snap.val():null);
+      },onError);
+    } catch(error) {
+      if(!cancelled) onError(error);
+    }
+  };
+  stopConnection=onValue(root(".info/connected"),snap=>{
+    if(snap.val()===true) start();
+  },onError);
+  return ()=>{
+    cancelled=true;
+    if(stopConnection) stopConnection();
+    if(stopValue) stopValue();
+  };
 }
 export async function createRecord(path, data) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
@@ -270,7 +292,13 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/householdCount`]=active.length;
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
-    await writeAndVerify(updates,[`billing_runs/${period}/status`,`bills/${period}`]);
+    const verifyPaths=[`billing_runs/${period}/status`,`bills/${period}`];
+    for(const [id] of active) verifyPaths.push(`arrearsLedger/${id}/${period}`);
+    for(const cat of ["kas","air","sampah"]) if(depositSummary[cat]>0) verifyPaths.push(`category_balances/${cat}`);
+    if(Object.keys(updates).some(path=>path.startsWith("deposits/"))) verifyPaths.push("deposits");
+    if(Object.keys(updates).some(path=>path.startsWith("deposit_ledger/"))) verifyPaths.push("deposit_ledger");
+    if(Object.keys(updates).some(path=>path.startsWith(`paymentsByMonth/${period}/`))) verifyPaths.push(`paymentsByMonth/${period}`);
+    await writeAndVerify(updates,verifyPaths);
     for(const [id,row] of active.map(([id])=>[id,updates[`bills/${period}/${id}`]])){
       await setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining);
       await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
