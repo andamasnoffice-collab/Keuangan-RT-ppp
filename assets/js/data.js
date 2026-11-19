@@ -2,8 +2,24 @@ import { ref, get, onValue, push, set, update, runTransaction, query, orderByChi
 import { db } from "./firebase.js";
 
 const root = (path) => ref(db, path);
-export async function read(path) {
+export async function assertDatabaseOnline() {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
+  const connection = await get(root(".info/connected"));
+  if (connection.val() !== true) throw new Error("Database Firebase tidak terhubung. Perubahan belum dinyatakan berhasil; periksa koneksi lalu coba lagi.");
+  return true;
+}
+export async function writeAndVerify(updates, verifyPaths=[]) {
+  await assertDatabaseOnline();
+  await update(ref(db), updates);
+  for (const path of verifyPaths) {
+    const snap = await get(root(path));
+    if (!snap.exists()) throw new Error("Server belum mengonfirmasi data tersimpan pada " + path + ". Periksa database sebelum mengulangi transaksi.");
+  }
+  return true;
+}
+
+export async function read(path) {
+  await assertDatabaseOnline();
   const snap = await get(root(path));
   return snap.exists() ? snap.val() : null;
 }
@@ -254,7 +270,7 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/householdCount`]=active.length;
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
-    await update(ref(db),updates);
+    await writeAndVerify(updates,[`billing_runs/${period}/status`,`bills/${period}`]);
     for(const [id,row] of active.map(([id])=>[id,updates[`bills/${period}/${id}`]])){
       await setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining);
       await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
@@ -339,7 +355,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
       }else needsReview++;
     }
     updates[`water_import_runs/${period}`]={status:"completed",period,completedAt:now,recordedBy:recordedBy||null,rowCount:rows.length,created,matched,meters,charges,needsReview};
-    await update(ref(db),updates);
+    await writeAndVerify(updates,[`water_import_runs/${period}/status`]);
     for(const row of rows){
       const blockKey=norm(row.block);
       const house=byBlock.get(blockKey);
@@ -374,7 +390,7 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_corrected",period,householdId,previousMeter:previous,oldCurrentMeter:existing.currentMeter,newCurrentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
-  await update(ref(db),updates);
+  await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
   await applyDepositToWaterBill(period,householdId,recordedBy);
   return reading;
@@ -476,7 +492,7 @@ export async function createExpense({category, amount, date, description, proof,
   updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
-  await update(ref(db), updates);
+  await writeAndVerify(updates,[`expensesByMonth/${period}/${expenseRef.key}`,`transactionsByMonth/${period}/${txRef.key}`,`category_balances/${category}`]);
   await applyMonthlySummaryDelta(period,expenseRef.key,{type:"expense",category,amount:value,date:record.date,description:record.description});
   return record;
 }
