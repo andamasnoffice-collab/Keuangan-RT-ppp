@@ -147,6 +147,13 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               items.push({cat,period:item.period,cash:currentRemaining,depositUsed:0,applied:currentRemaining,surplus:0,remaining:0});
             }
           }
+          for(const cat of fixedCategories){
+            const amount=selected[cat].reduce((sum,item)=>sum+item.amount,0);
+            if(amount>0){
+              const balance=await read(`category_balances/${cat}`)||{};
+              updates[`category_balances/${cat}`]={...balance,balance:num(balance.balance)+amount,income:num(balance.income)+amount,updatedAt:timestamp};
+            }
+          }
           if(airGross>0||airCash>0||airDepositUsed>0){
             let depositLeft=airDepositUsed,cashLeft=airApplied;
             for(const row of airRows){
