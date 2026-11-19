@@ -524,3 +524,17 @@ td{color:var(--text)}
  .compact-house-ledger td b{font-size:11px}
  .house-ledger-status-grid{grid-template-columns:1fr}
 }
+
+/* Persistent monthly billing shortcut in the top bar */
+.billing-quick-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px 12px;border:1px solid #c8e5e2;border-radius:12px;background:#e7f5f3;color:#087f82;font:800 11px Manrope, sans-serif;white-space:nowrap;cursor:pointer;transition:filter .15s,transform .15s}
+.billing-quick-btn:hover{filter:brightness(.97);transform:translateY(-1px)}
+.billing-quick-icon{font-size:17px;line-height:1}
+.billing-quick-btn.is-complete{border-color:#b9e5d1;background:#eaf8f0;color:#13734f}
+:root[data-theme="dark"] .billing-quick-btn{border-color:#285b5b;background:#173a40;color:#9be3df}
+:root[data-theme="dark"] .billing-quick-btn.is-complete{border-color:#285b47;background:#173a30;color:#8de0b4}
+@media(max-width:760px){
+ .user-area{gap:5px}
+ .billing-quick-btn{min-height:38px;padding:7px 8px;font-size:9px;gap:5px;border-radius:10px}
+ .billing-quick-icon{font-size:14px}
+ .billing-quick-btn:not(.hidden){max-width:116px;overflow:hidden;text-overflow:ellipsis}
+}
