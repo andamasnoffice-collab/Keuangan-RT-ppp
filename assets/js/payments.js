@@ -96,7 +96,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       const fixedCards=[...box.querySelectorAll(".payment-category[data-category='kas'],.payment-category[data-category='sampah']")];
       const allFixedChecks=[...box.querySelectorAll(".fixed-month-check")];
       const airInput=box.querySelector(".air-payment-amount");
-      const getSelected=cat=>[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check:checked`)];
+      const getSelected=cat=>[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check:checked`)].filter(c=>num(c.dataset.amount)>0);
       const updateFixed=cat=>{
         const checks=[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check`)];
         const billable=checks.filter(c=>c.dataset.billExists==="true");
