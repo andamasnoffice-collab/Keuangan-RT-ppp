@@ -507,3 +507,20 @@ td{color:var(--text)}
 .deposit-balance-card b{font-size:14px;color:var(--green)}
 :root[data-theme="dark"] .deposit-balance-wrap{background:var(--surface-soft);border-color:var(--line)}
 @media(max-width:420px){.deposit-balance-grid{gap:5px}.deposit-balance-card{padding:8px}.deposit-balance-card b{font-size:12px}}
+
+
+/* Compact household movement summary */
+.compact-house-ledger{min-width:0;width:100%}
+.compact-house-ledger th,.compact-house-ledger td{padding:11px 16px;font-size:13px}
+.compact-house-ledger th:not(:first-child),.compact-house-ledger td:not(:first-child){text-align:right}
+.compact-house-ledger td b{font-size:13px;font-variant-numeric:tabular-nums}
+.house-ledger-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.house-ledger-status-grid .deposit-balance-wrap{margin:0}
+.house-ledger-grand-total{display:flex;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:12px}
+.house-ledger-grand-total strong{font-size:15px;color:var(--red)}
+:root[data-theme="dark"] .house-ledger-grand-total strong{color:var(--red)}
+@media(max-width:600px){
+ .compact-house-ledger th,.compact-house-ledger td{padding:10px 8px;font-size:11px}
+ .compact-house-ledger td b{font-size:11px}
+ .house-ledger-status-grid{grid-template-columns:1fr}
+}
