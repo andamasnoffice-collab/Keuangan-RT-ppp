@@ -611,16 +611,17 @@ export async function buildAnnualSummary(year, recordedBy=null) {
   const y=Number(year);
   if(!Number.isInteger(y)||y<2000||y>new Date().getFullYear()) throw new Error("Tahun rekap tidak valid.");
   const periods=Array.from({length:12},(_,i)=>`${y}-${String(i+1).padStart(2,"0")}`);
-  const [monthly,settings,balances,deposits,arrears]=await Promise.all([
+  const [monthly,settings,balances,deposits,arrears,previousYear]=await Promise.all([
     Promise.all(periods.map(p=>read(`financeSummaryByMonth/${p}`))),
     getBillingSettings(),
     read("category_balances"),
     read("deposits"),
-    read("arrearsSummary")
+    read("arrearsSummary"),
+    y>2000?read(`annual_summaries/${y-1}`):null
   ]);
   const categories=["kas","sampah","air"],byCategory={},months={};
   for(const cat of categories){
-    const opening=Number(settings?.openingBalances?.[cat])||0;
+    const opening=Number(previousYear?.byCategory?.[cat]?.closingOperatingBalance ?? settings?.openingBalances?.[cat])||0;
     let income=0,expense=0;
     monthly.forEach((row,index)=>{
       const item=row?.byCategory?.[cat]||{};
