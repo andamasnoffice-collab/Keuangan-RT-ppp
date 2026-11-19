@@ -69,6 +69,15 @@ $("#loginForm").addEventListener("submit", async e=>{
 });
 $("#logoutBtn").addEventListener("click",()=>logout());
 $("#mobileMenu").addEventListener("click",()=>$(".sidebar").classList.toggle("open"));
+$("#billingQuickBtn").addEventListener("click",async()=>{
+  if(!currentUser)return;
+  if(page!=="dashboard"){
+    page="dashboard";
+    document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
+    await render();
+  }
+  requestAnimationFrame(()=>$("#billingCreationPanel")?.scrollIntoView({behavior:"smooth",block:"center"}));
+});
 $("#mobileActionDock").addEventListener("click",async e=>{
   const button=e.target.closest("[data-dock-action]");
   if(!button||!currentUser)return;
@@ -103,6 +112,7 @@ observeSession((user,profile)=>{
   $("#loginOpenBtn").classList.toggle("hidden",!!user);
   $("#logoutBtn").classList.toggle("hidden",!user);
   $("#mobileActionDock").classList.toggle("hidden",!user);
+  $("#billingQuickBtn").classList.toggle("hidden",!user);
   if(user) {
     document.querySelectorAll("#sideNav [data-page]").forEach(x=>x.classList.remove("hidden"));
     render();
@@ -299,7 +309,7 @@ async function renderDashboard(c){
   const cashOnHand=operating+deposits;
   const homes=Object.values(households);
   const announcement=await read("public_views/announcement")||{active:false,title:"",message:""};
-  c.innerHTML=`  <section class="panel announcement-editor" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pengumuman warga</h3><p class="tiny muted">Tulis informasi yang akan dibaca seluruh warga pada Dashboard publik.</p></div><span class="pill">Publik</span></div><label class="field">Judul pengumuman<input id="announcementTitle" maxlength="90" value="${escapeHtml(announcement.title||"")}" placeholder="Contoh: Jadwal kerja bakti"></label><label class="field">Isi pengumuman<textarea id="announcementMessage" rows="4" maxlength="2000" placeholder="Tuliskan informasi untuk warga...">${escapeHtml(announcement.message||"")}</textarea></label><div class="toolbar"><label class="announcement-toggle"><input id="announcementActive" type="checkbox" ${announcement.active?"checked":""}> Tampilkan pengumuman kepada warga</label><button id="saveAnnouncementBtn" class="btn secondary">Simpan Pengumuman</button></div><p class="tiny muted" id="announcementStatus">${announcement.updatedAt?"Terakhir diperbarui "+new Date(announcement.updatedAt).toLocaleString("id-ID"):"Belum ada pengumuman tersimpan."}</p></section><div class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><div class="toolbar dashboard-billing-actions" style="margin-top:12px"><button id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><button id="publishPublicBtn" class="btn secondary">Perbarui Daftar Tagihan Publik</button></div><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div><div class="grid stats">${card("Total rumah",homes.length,"Data rumah terdaftar")}${card("Total anggota",homes.reduce((s,h)=>s+Object.keys(h.members||{}).length,0),"Anggota keluarga")}${card("Uang kas/bank",money(cashOnHand),"Termasuk dana deposit warga")}${card("Saldo operasional",money(operating),"Dana yang bebas digunakan")}${card("Total deposit warga",money(deposits),"Kewajiban yang harus tetap tersedia")}</div>
+  c.innerHTML=`  <section class="panel announcement-editor" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pengumuman warga</h3><p class="tiny muted">Tulis informasi yang akan dibaca seluruh warga pada Dashboard publik.</p></div><span class="pill">Publik</span></div><label class="field">Judul pengumuman<input id="announcementTitle" maxlength="90" value="${escapeHtml(announcement.title||"")}" placeholder="Contoh: Jadwal kerja bakti"></label><label class="field">Isi pengumuman<textarea id="announcementMessage" rows="4" maxlength="2000" placeholder="Tuliskan informasi untuk warga...">${escapeHtml(announcement.message||"")}</textarea></label><div class="toolbar"><label class="announcement-toggle"><input id="announcementActive" type="checkbox" ${announcement.active?"checked":""}> Tampilkan pengumuman kepada warga</label><button id="saveAnnouncementBtn" class="btn secondary">Simpan Pengumuman</button></div><p class="tiny muted" id="announcementStatus">${announcement.updatedAt?"Terakhir diperbarui "+new Date(announcement.updatedAt).toLocaleString("id-ID"):"Belum ada pengumuman tersimpan."}</p></section><div id="billingCreationPanel" class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><div class="toolbar dashboard-billing-actions" style="margin-top:12px"><button id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><button id="publishPublicBtn" class="btn secondary">Perbarui Daftar Tagihan Publik</button></div><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div><div class="grid stats">${card("Total rumah",homes.length,"Data rumah terdaftar")}${card("Total anggota",homes.reduce((s,h)=>s+Object.keys(h.members||{}).length,0),"Anggota keluarga")}${card("Uang kas/bank",money(cashOnHand),"Termasuk dana deposit warga")}${card("Saldo operasional",money(operating),"Dana yang bebas digunakan")}${card("Total deposit warga",money(deposits),"Kewajiban yang harus tetap tersedia")}</div>
 
   <div class="section-head"><h3>Saldo setiap kategori</h3><span class="pill">Periode ${monthKey()}</span></div>
   <div class="grid category-grid">${categoryCard("Kas RT",totals[0].balance,totals[0].income,totals[0].expense,totals[0].deposit)}${categoryCard("Uang Sampah",totals[1].balance,totals[1].income,totals[1].expense,totals[1].deposit)}${categoryCard("Uang Air",totals[2].balance,totals[2].income,totals[2].expense,totals[2].deposit)}</div>
@@ -319,6 +329,10 @@ async function renderDashboard(c){
   });
   const run=await read(`billing_runs/${monthKey()}`);
   const runBadge=$("#billingRunBadge"),runButton=$("#createMonthlyBillsBtn"),runMessage=$("#billingRunMessage");
+  const quickLabel=$("#billingQuickLabel");
+  if(quickLabel)quickLabel.textContent=run?.status==="completed"?"Tagihan · Selesai":run?.status==="processing"?"Tagihan · Diproses":"Tagihan Bulanan";
+  const quickBtn=$("#billingQuickBtn");
+  if(quickBtn)quickBtn.classList.toggle("is-complete",run?.status==="completed");
   if(run?.status==="completed"){
     runBadge.className="pill success";runBadge.textContent="Sudah dibuat";
     runButton.disabled=true;runButton.textContent="Tagihan bulan ini sudah dibuat";
