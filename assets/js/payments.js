@@ -1,6 +1,6 @@
 import { ref, push, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod , writeAndVerify } from "./data.js?v=20261119-db-confirm1";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod , writeAndVerify } from "./data.js?v=20261119-deposit-verify2";
 
 const categories=["kas","air","sampah"];
 const blockCollator=new Intl.Collator("id",{numeric:true,sensitivity:"base"});
@@ -24,7 +24,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
     if(!id){box.innerHTML='<div class="empty">Pilih rumah untuk menampilkan tagihan dan deposit.</div>';return;}
     box.innerHTML='<div class="empty">Mengambil tagihan dan deposit…</div>';
     try{
-      const {getHouseholdArrearLedger,read}=await import("./data.js?v=20261119-db-confirm1");
+      const {getHouseholdArrearLedger,read}=await import("./data.js?v=20261119-deposit-verify2");
       const [ledger,dep]=await Promise.all([getHouseholdArrearLedger(id),read(`deposits/${id}`)]);
       const periods=Object.keys(ledger||{}).filter(p=>/^\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
       const periodBills=periods.map(period=>({period,categories:ledger[period]||{}}));
