@@ -25,9 +25,10 @@ export async function read(path) {
 }
 export function watch(path, callback, onError=console.error) {
   if (!db) return () => {};
-  let cancelled=false, stopConnection=null, stopValue=null;
+  let cancelled=false, starting=false, stopConnection=null, stopValue=null;
   const start=async()=>{
-    if(cancelled||stopValue) return;
+    if(cancelled||starting||stopValue) return;
+    starting=true;
     try {
       await assertDatabaseOnline();
       const initial=await get(root(path));
@@ -38,6 +39,8 @@ export function watch(path, callback, onError=console.error) {
       },onError);
     } catch(error) {
       if(!cancelled) onError(error);
+    } finally {
+      starting=false;
     }
   };
   stopConnection=onValue(root(".info/connected"),snap=>{
