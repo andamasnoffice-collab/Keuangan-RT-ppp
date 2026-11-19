@@ -472,7 +472,7 @@ async function renderHouseholdLedger(c){
     target.innerHTML='<div class="empty">Memuat mutasi tahunan…</div>';
     try{
       const periods=Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,"0")}`);
-      const [months,currentDeposits]=await Promise.all([Promise.all(periods.map(period=>getPayments(period))),read(`deposits/${id}`)]);
+      const [months,currentDeposits,arrearsNow]=await Promise.all([Promise.all(periods.map(period=>getPayments(period))),read(`deposits/${id}`),read(`arrearsSummary/${id}`)]);
       const sums=periods.map((period,index)=>{
         const payments=Object.values(months[index]||{}).filter(x=>x?.householdId===id);
         const row={period,cash:{kas:0,air:0,sampah:0},depositIn:{kas:0,air:0,sampah:0},depositUsed:{kas:0,air:0,sampah:0},count:payments.length};
@@ -490,9 +490,16 @@ async function renderHouseholdLedger(c){
       const fmt=n=>money(n),monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
       const total={kas:0,air:0,sampah:0,depositInKas:0,depositInAir:0,depositInSampah:0,depositUsedKas:0,depositUsedAir:0,depositUsedSampah:0,cash:0,depositIn:0,depositUsed:0};
       sums.forEach(row=>{for(const cat of ["kas","air","sampah"]){total[cat]+=row.cash[cat];total["depositIn"+cat[0].toUpperCase()+cat.slice(1)]+=row.depositIn[cat];total["depositUsed"+cat[0].toUpperCase()+cat.slice(1)]+=row.depositUsed[cat];}total.cash+=row.cashTotal;total.depositIn+=row.depositInTotal;total.depositUsed+=row.depositUsedTotal;});
-      const cell=(cash,incoming,used)=>`<div class="ledger-cash"><b>Tunai</b> ${fmt(cash)}</div><div class="ledger-deposit-in"><b>Deposit masuk</b> ${fmt(incoming)}</div><div class="ledger-deposit"><b>Dari deposit</b> ${fmt(used)}</div>`;
+      const cell=(cash,used)=>`<b>${fmt((Number(cash)||0)+(Number(used)||0))}</b>`;
       const depositCards=["kas","air","sampah"].map(cat=>`<div class="deposit-balance-card"><span>${cat==="kas"?"Kas RT":cat==="air"?"Air":"Sampah"}</span><b>${fmt(currentDeposits?.[cat]||0)}</b></div>`).join("");
-      target.innerHTML=`<div class="house-ledger-heading"><div><b>Mutasi ${escapeHtml(homes.find(h=>h.id===id)?.block||"")}</b><span class="tiny muted"> · ${year}</span></div><span class="pill">${sums.reduce((a,b)=>a+b.count,0)} catatan</span></div><div class="deposit-balance-wrap"><b>Saldo deposit saat ini</b><div class="deposit-balance-grid">${depositCards}</div></div><div class="table-wrap"><table class="house-ledger-table"><thead><tr><th>Bulan</th><th>Kas RT</th><th>Air</th><th>Sampah</th><th>Total tunai</th><th>Deposit masuk</th><th>Deposit dipakai</th></tr></thead><tbody>${sums.map((row,i)=>`<tr><td>${monthNames[i]}</td><td>${cell(row.cash.kas,row.depositIn.kas,row.depositUsed.kas)}</td><td>${cell(row.cash.air,row.depositIn.air,row.depositUsed.air)}</td><td>${cell(row.cash.sampah,row.depositIn.sampah,row.depositUsed.sampah)}</td><td><b>${fmt(row.cashTotal)}</b></td><td><b>${fmt(row.depositInTotal)}</b></td><td><b>${fmt(row.depositUsedTotal)}</b></td></tr>`).join("")}<tr class="ledger-total"><td><b>Total ${year}</b></td><td>${cell(total.kas,total.depositInKas,total.depositUsedKas)}</td><td>${cell(total.air,total.depositInAir,total.depositUsedAir)}</td><td>${cell(total.sampah,total.depositInSampah,total.depositUsedSampah)}</td><td><b>${fmt(total.cash)}</b></td><td><b>${fmt(total.depositIn)}</b></td><td><b>${fmt(total.depositUsed)}</b></td></tr></tbody></table></div>`;
+      const arrearsCards=["kas","air","sampah"].map(cat=>`<div class="deposit-balance-card"><span>${cat==="kas"?"Kas RT":cat==="air"?"Air":"Sampah"}</span><b>${fmt(arrearsNow?.[cat]||0)}</b></div>`).join("");
+      target.innerHTML=`<div class="house-ledger-heading"><div><b>Mutasi ${escapeHtml(homes.find(h=>h.id===id)?.block||"")}</b><span class="tiny muted"> · ${year}</span></div><span class="pill">${sums.reduce((a,b)=>a+b.count,0)} catatan</span></div>
+        <div class="table-wrap"><table class="house-ledger-table compact-house-ledger"><thead><tr><th>Bulan</th><th>Kas RT</th><th>Air</th><th>Sampah</th></tr></thead><tbody>${sums.map((row,i)=>`<tr><td>${monthNames[i]}</td><td>${cell(row.cash.kas,row.depositUsed.kas)}</td><td>${cell(row.cash.air,row.depositUsed.air)}</td><td>${cell(row.cash.sampah,row.depositUsed.sampah)}</td></tr>`).join("")}<tr class="ledger-total"><td>Total ${year}</td><td>${cell(total.kas,total.depositUsedKas)}</td><td>${cell(total.air,total.depositUsedAir)}</td><td>${cell(total.sampah,total.depositUsedSampah)}</td></tr></tbody></table></div>
+        <div class="house-ledger-status-grid">
+          <section class="deposit-balance-wrap"><b>Sisa deposit saat ini</b><div class="deposit-balance-grid">${depositCards}</div></section>
+          <section class="deposit-balance-wrap"><b>Sisa tunggakan saat ini</b><div class="deposit-balance-grid">${arrearsCards}</div><div class="house-ledger-grand-total">Total kurang bayar: <strong>${fmt(arrearsNow?.total||0)}</strong></div></section>
+        </div>
+        <p class="tiny muted">Nominal per bulan adalah total yang sudah dibayar (tunai + deposit terpakai). Sisa deposit dan tunggakan menunjukkan posisi terbaru dari Firebase.</p>`
     }catch(err){target.innerHTML=`<div class="muted-note">Gagal memuat mutasi: ${escapeHtml(err.message)}</div>`;}
   };
   $("#loadHouseLedger").addEventListener("click",load);
