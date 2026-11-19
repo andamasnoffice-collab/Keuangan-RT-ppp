@@ -461,7 +461,11 @@ async function renderTransactions(c){
 }
 
 async function renderReports(c){
-  const sums=await read("category_balances")||{};
-  c.innerHTML=`<div class="grid category-grid">${["kas","sampah","air"].map(k=>categoryCard(k.toUpperCase(),sums[k]?.balance,sums[k]?.income,sums[k]?.expense,sums[k]?.deposit)).join("")}</div><div class="muted-note" style="margin-top:16px">Laporan final akan menyediakan filter periode, ekspor CSV/Excel dan cetak PDF setelah alur transaksi tervalidasi.</div>`;
+  const [sums,depositRows]=await Promise.all([read("category_balances"),read("deposits")]);
+  const categories=["kas","sampah","air"];
+  const cards=categories.map(k=>{const deposit=Object.values(depositRows||{}).reduce((sum,row)=>sum+(Number(row?.[k])||0),0);return categoryCard(k.toUpperCase(),sums?.[k]?.balance,sums?.[k]?.income,sums?.[k]?.expense,deposit);}).join("");
+  const operating=categories.reduce((sum,k)=>sum+(Number(sums?.[k]?.balance)||0),0);
+  const depositTotal=categories.reduce((sum,k)=>sum+Object.values(depositRows||{}).reduce((v,row)=>v+(Number(row?.[k])||0),0),0);
+  c.innerHTML=`<div class="grid stats">${card("Uang kas/bank",money(operating+depositTotal),"Saldo operasional + deposit warga")}${card("Saldo operasional",money(operating),"Dana yang bebas digunakan")}${card("Kewajiban deposit",money(depositTotal),"Dana milik warga")}</div><div class="grid category-grid">${cards}</div><div class="muted-note" style="margin-top:16px"><b>Rekonsiliasi:</b> uang kas/bank = saldo operasional + kewajiban deposit. Pemakaian deposit tidak menambah uang kas/bank karena uangnya sudah diterima pada transaksi awal.</div>`;
 }
 render();
