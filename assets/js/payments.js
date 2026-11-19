@@ -137,7 +137,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               if(currentRemaining!==item.amount)throw new Error(`Nominal tagihan ${labels[cat]} ${monthLabel(item.period)} berubah. Muat ulang data sebelum menyimpan.`);
               updates[`bills/${item.period}/${id}/${cat}/paidAmount`]=num(current.paidAmount)+currentRemaining;
               updates[`bills/${item.period}/${id}/${cat}/remaining`]=0;
-              updates[`bills/${item.period}/${id}/${cat}/status']="paid";
+              updates[`bills/${item.period}/${id}/${cat}/status`]="paid";
               updates[`arrearsLedger/${id}/${item.period}/${cat}`]=0;
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc=`Pelunasan ${labels[cat]} bulan ${monthLabel(item.period)}`;
