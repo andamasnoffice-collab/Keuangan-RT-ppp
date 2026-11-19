@@ -31,7 +31,21 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       const periods=Object.keys(ledger||{}).filter(p=>/^\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
       const periodBills=periods.map(period=>({period,categories:ledger[period]||{}}));
       const rowsFor=cat=>periodBills.filter(row=>num(row.categories?.[cat])>0);
-      const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,rowsFor(cat)]));
+      const ledgerYears=periods.map(p=>Number(p.slice(0,4)));
+      const currentYear=new Date().getFullYear();
+      const firstYear=ledgerYears.length?Math.min(currentYear,...ledgerYears):currentYear;
+      const lastYear=ledgerYears.length?Math.max(currentYear,...ledgerYears):currentYear;
+      const displayPeriods=[];
+      for(let year=firstYear;year<=lastYear;year++){
+        for(let month=1;month<=12;month++){
+          const period=`${year}-${String(month).padStart(2,"0")}`;
+          displayPeriods.push({period,categories:ledger[period]||{},billExists:!!ledger[period]});
+        }
+      }
+      const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,displayPeriods.map(row=>({
+        ...row,billExists:row.billExists&&Object.prototype.hasOwnProperty.call(row.categories,cat),
+        amount:num(row.categories?.[cat])
+      }))]));
       const airRows=rowsFor("air");
       const airGross=airRows.reduce((sum,row)=>sum+num(row.categories.air),0);
       const airDeposit=num(dep?.air);
@@ -44,7 +58,11 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             return `<section class="payment-category" data-category="${cat}">
               <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Centang bulan yang dilunasi penuh</span></div><strong class="fixed-total">${money(0)}</strong></div>
               <div class="payment-month-checklist" data-fixed-list="${cat}">
-                ${rows.length?rows.map((row,i)=>`<label class="pay-month-row"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${num(row.categories[cat])}" ${i===0?"":"disabled"}><span><b>${monthLabel(row.period)}</b><small>Sisa tagihan: ${money(row.categories[cat])}</small></span><strong>${money(row.categories[cat])}</strong></label>`).join(""):'<div class="empty">Tidak ada tagihan belum lunas.</div>'}
+                ${rows.map(row=>{
+                  const paid=row.billExists&&row.amount===0;
+                  const status=!row.billExists?"Tagihan belum dibuat":paid?"Sudah lunas":`Sisa tagihan: ${money(row.amount)}`;
+                  return `<label class="pay-month-row ${paid?"is-paid":!row.billExists?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" ${paid?"checked disabled":!row.billExists?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.billExists?money(row.amount):"—"}</strong></label>`;
+                }).join("")}
               </div>
               <small class="muted fixed-help">Wajib berurutan. Centang bulan pertama yang belum lunas, lalu bulan berikutnya. Tidak bisa melompati bulan.</small>
             </section>`;
@@ -81,9 +99,14 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       const getSelected=cat=>[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check:checked`)];
       const updateFixed=cat=>{
         const checks=[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check`)];
-        let openIndex=checks.findIndex(c=>!c.checked);
-        checks.forEach((c,i)=>{c.disabled=i>openIndex;});
-        const total=checks.filter(c=>c.checked).reduce((s,c)=>s+num(c.dataset.amount),0);
+        const billable=checks.filter(c=>c.dataset.billExists==="true");
+        let openIndex=billable.findIndex(c=>!c.checked);
+        checks.forEach(c=>{
+          if(c.dataset.billExists!=="true"){c.disabled=true;return;}
+          if(c.checked&&num(c.dataset.amount)===0){c.disabled=true;return;}
+          c.disabled=openIndex<0?true:billable.indexOf(c)>openIndex;
+        });
+        const total=checks.filter(c=>c.checked&&num(c.dataset.amount)>0).reduce((s,c)=>s+num(c.dataset.amount),0);
         box.querySelector(`.payment-category[data-category="${cat}"] .fixed-total`).textContent=money(total);
       };
       const calculate=()=>{
@@ -106,8 +129,9 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         const cat=check.closest(".payment-category").dataset.category;
         if(!check.checked){
           const checks=[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check`)];
-          const idx=checks.indexOf(check);
-          checks.slice(idx+1).forEach(c=>{c.checked=false;});
+          const billable=checks.filter(c=>c.dataset.billExists==="true");
+          const idx=billable.indexOf(check);
+          billable.slice(idx+1).forEach(c=>{if(num(c.dataset.amount)>0)c.checked=false;});
         }
         updateFixed(cat);calculate();
       }));
