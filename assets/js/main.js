@@ -633,10 +633,19 @@ async function renderCategory(c,cat){
     read("settings/billingRates"),
     read("deposits")
   ]);
+  const [arrearsLedger]=await Promise.all([read("arrearsLedger")]);
   const depositTotal=Object.values(depositRows||{}).reduce((sum,cats)=>sum+(Number(cats?.[cat])||0),0);
   const balance={...(bal||{}),deposit:depositTotal},period=monthKey(),year=Number(period.slice(0,4));
-  const bills=await getMonthBills(period);
-  const due=Object.values(bills).reduce((sum,h)=>sum+Number(h?.[cat]?.remaining||0),0);
+  const monthDue={};
+  for(const ledger of Object.values(arrearsLedger||{})){
+    for(const [key,row] of Object.entries(ledger||{})){
+      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
+      const amount=Math.max(0,Number(row?.[cat])||0);
+      if(amount>0)monthDue[key]=(monthDue[key]||0)+amount;
+    }
+  }
+  const due=Object.values(monthDue).reduce((sum,n)=>sum+n,0);
+  const dueRows=Object.entries(monthDue).sort(([a],[b])=>a.localeCompare(b));
   const labels={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
   const opening=Number(settings?.openingBalances?.[cat])||0;
   const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
@@ -651,7 +660,8 @@ async function renderCategory(c,cat){
     return `<tr class="${future?"month-future":""}"><td><b>${name}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount">${money(end)}</td></tr>`;
   }).join("");
   const stats=`<div class="grid stats">${card("Saldo operasional saat ini",money(balance.balance))}${card("Pemasukan tercatat",money(balance.income))}${card("Pengeluaran tercatat",money(balance.expense))}${card("Deposit warga",money(balance.deposit))}</div>
-  <div class="section-head"><div><h3>Tagihan belum dibayar · ${period}</h3><p class="tiny muted">Sisa kewajiban ${labels[cat]}</p></div><span class="pill warning">${money(due)}</span></div>`;
+  <div class="section-head"><div><h3>Total Tunggakan sampai ${period}</h3><p class="tiny muted">Akumulasi sisa kewajiban ${labels[cat]} dari seluruh periode sampai bulan berjalan</p></div><span class="pill warning">${money(due)}</span></div>
+  <div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Periode tunggakan</th><th>Sisa belum dibayar</th></tr></thead><tbody>${dueRows.map(([key,amount])=>`<tr><td>${key}</td><td class="amount">${money(amount)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">Tidak ada tunggakan sampai bulan berjalan.</td></tr>'}</tbody><tfoot><tr><th>Total sampai ${period}</th><th class="amount">${money(due)}</th></tr></tfoot></table></div>`;
   const ledger=`<section class="panel monthly-ledger">
     <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Ringkasan pemasukan, pengeluaran, dan saldo berjalan per bulan</p></div><span class="pill">Januari–Desember</span></div>
     <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows}<tr class="ledger-total"><td><b>Akumulasi tahun ini</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
