@@ -1,6 +1,6 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify } from "./data.js?v=20261119-checkbox1";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, refreshPublicSnapshot } from "./data.js?v=20261119-deposit-air-only1";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
@@ -226,7 +226,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               if(Object.prototype.hasOwnProperty.call(updates,path))await setHouseholdArrearPeriod(id,row.period,cat,updates[path]);
             }
           }
-          toast("Pembayaran berhasil disimpan dan dikonfirmasi Firebase.");
+          await refreshPublicSnapshot(monthKey);
+          toast("Pembayaran berhasil disimpan, arus kas diperbarui, dan daftar publik disinkronkan.");
           select.dispatchEvent(new Event("change"));
         }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
         finally{button.disabled=false;button.textContent="Simpan pembayaran";}
