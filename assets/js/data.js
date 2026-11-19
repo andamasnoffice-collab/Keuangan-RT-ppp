@@ -203,7 +203,7 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
     [`transactionsByMonth/${period}/${txRef.key}`]:{id:txRef.key,type:"payment",category:"air",amount:use,householdId,referenceId:paymentRef.key,date:period+"-01",description:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
     "category_balances/air":{...(balance||{}),balance:(Number(balance?.balance)||0)+use,income:(Number(balance?.income)||0)+use,updatedAt:now}
   };
-  await update(ref(db),updates);
+  await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`,`category_balances/air`]);
   await applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"});
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
   return use;
@@ -424,7 +424,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
-  await update(ref(db),updates);
+  await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
   await applyDepositToWaterBill(period,householdId,recordedBy);
   return reading;
