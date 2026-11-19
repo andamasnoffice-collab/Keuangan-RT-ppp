@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData } from "./data.js?v=20261119-pathfix1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary } from "./data.js?v=20261119-annual-summary1";
 import { renderPaymentPage } from "./payments.js?v=20261119-deposit-verify2";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -760,7 +760,32 @@ async function renderTransactions(c){
 }
 
 async function renderReports(c){
-  const sums=await read("category_balances")||{};
-  c.innerHTML=`<div class="grid category-grid">${["kas","sampah","air"].map(k=>categoryCard(k.toUpperCase(),sums[k]?.balance,sums[k]?.income,sums[k]?.expense,sums[k]?.deposit)).join("")}</div><div class="muted-note" style="margin-top:16px">Laporan final akan menyediakan filter periode, ekspor CSV/Excel dan cetak PDF setelah alur transaksi tervalidasi.</div>`;
+  const [sums,archives]=await Promise.all([read("category_balances"),read("annual_summaries")]);
+  const currentYear=new Date().getFullYear();
+  const years=[...new Set([...Object.keys(archives||{}).map(Number),currentYear])].filter(y=>Number.isInteger(y)&&y>=2000&&y<=currentYear).sort((a,b)=>b-a);
+  const options=years.map(y=>`<option value="${y}">${y}</option>`).join("");
+  c.innerHTML=`<div class="section-head"><div><h3>Laporan Tahunan</h3><p class="tiny muted">Rekap ringkas per tahun agar laporan historis tidak perlu membaca seluruh transaksi.</p></div><span class="pill">Admin</span></div>
+    <div class="panel"><div class="toolbar"><label class="field">Pilih tahun<select id="annualReportYear">${options}</select></label><button class="btn primary" id="buildAnnualReportBtn">Buat / Perbarui Rekap Tahun</button></div><p class="tiny muted" id="annualReportStatus">Rekap tahunan disimpan terpisah. Data transaksi asli tetap dipertahankan.</p></div>
+    <div id="annualReportContent" class="panel" style="margin-top:14px">Memuat rekap…</div>
+    <div class="muted-note" style="margin-top:12px">Rekap tahunan menyimpan total pemasukan dan pengeluaran per kategori, saldo operasional hasil perhitungan, serta posisi tunggakan dan deposit saat rekap dibuat. Untuk tahun yang sudah lewat, gunakan rekap tersimpan. Jika ada koreksi transaksi lama, buat ulang rekap tahun terkait.</div>`;
+  const draw=async()=>{
+    const year=$("#annualReportYear").value;
+    const row=await read(`annual_summaries/${year}`);
+    const host=$("#annualReportContent");
+    if(!row){host.innerHTML='<p class="muted">Belum ada rekap tahun ini. Klik “Buat / Perbarui Rekap Tahun”.</p>';return;}
+    const names={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
+    host.innerHTML=`<div class="section-head"><h3>Rekap Keuangan ${row.year}</h3><span class="pill">Dibuat ${new Date(row.generatedAt).toLocaleString("id-ID")}</span></div>
+      <div class="grid category-grid">${["kas","sampah","air"].map(cat=>{const x=row.byCategory?.[cat]||{};return categoryCard(names[cat],x.closingOperatingBalance,x.income,x.expenses,x.depositLiability);}).join("")}</div>
+      <div class="table-wrap"><table><thead><tr><th>Kategori</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir operasional</th><th>Deposit warga</th></tr></thead><tbody>${["kas","sampah","air"].map(cat=>{const x=row.byCategory?.[cat]||{};return `<tr><td>${names[cat]}</td><td class="amount">${money(x.openingBalance)}</td><td class="amount">${money(x.income)}</td><td class="amount">${money(x.expenses)}</td><td class="amount">${money(x.closingOperatingBalance)}</td><td class="amount">${money(x.depositLiability)}</td></tr>`;}).join("")}</tbody></table></div>
+      <div class="grid stats" style="margin-top:14px">${card("Total tunggakan saat rekap",money(row.arrearsAtSnapshot?.total),"Posisi saat rekap dibuat")}${card("Total deposit warga",money(row.depositLiabilityAtSnapshot),"Kewajiban deposit saat rekap dibuat")}${card("Saldo operasional saat rekap",money(row.operatingBalanceAtSnapshot),"Posisi saat rekap dibuat")}</div>`;
+  };
+  $("#annualReportYear").addEventListener("change",draw);
+  $("#buildAnnualReportBtn").addEventListener("click",async()=>{
+    const button=$("#buildAnnualReportBtn");button.disabled=true;button.textContent="Menyimpan rekap…";
+    try{const result=await buildAnnualSummary($("#annualReportYear").value,currentUser?.uid);$("#annualReportStatus").textContent="Rekap "+result.year+" tersimpan dan dikonfirmasi Firebase.";toast("Rekap tahunan berhasil disimpan.");await draw();}
+    catch(error){$("#annualReportStatus").textContent="Gagal membuat rekap: "+error.message;toast("Rekap gagal: "+error.message);}
+    finally{button.disabled=false;button.textContent="Buat / Perbarui Rekap Tahun";}
+  });
+  await draw();
 }
 render();
