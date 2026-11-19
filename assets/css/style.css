@@ -554,3 +554,10 @@ td{color:var(--text)}
 .fixed-help{display:block;line-height:1.5;margin-top:8px}
 :root[data-theme="dark"] .pay-month-row{background:var(--surface);border-color:var(--line)}
 @media(max-width:600px){.payment-month-checklist{grid-template-columns:1fr;gap:7px}.pay-month-row{padding:10px}}
+
+/* Full-year payment checklist: compact month grid on desktop, responsive on mobile. */
+.payment-month-checklist{grid-template-columns:repeat(3,minmax(0,1fr));}
+.pay-month-row.is-paid{border-color:color-mix(in srgb,var(--green) 42%,var(--line));background:color-mix(in srgb,var(--green) 7%,var(--surface));}
+.pay-month-row.is-not-created{opacity:.48;}
+@media(max-width:900px){.payment-month-checklist{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:600px){.payment-month-checklist{grid-template-columns:1fr;}}
