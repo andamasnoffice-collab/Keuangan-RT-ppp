@@ -264,7 +264,7 @@ export async function createMonthlyBills(period, recordedBy) {
         air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
       const applied={};
-      for(const cat of ["kas","air","sampah"]){
+      for(const cat of ["air"]){
         const available=Math.max(0,Number(deposits?.[id]?.[cat])||0);
         const used=Math.min(available,raw[cat]);
         if(used>0){
@@ -284,7 +284,7 @@ export async function createMonthlyBills(period, recordedBy) {
         updates[`paymentsByMonth/${period}/${paymentRef.key}`]={id:paymentRef.key,type:"automatic_deposit_application",householdId:id,householdLabel:h.block||"",period,date:period+"-01",items,cashReceived:0,depositUsed:Object.values(applied).reduce((a,b)=>a+b,0),appliedToBills:Object.values(applied).reduce((a,b)=>a+b,0),surplusDeposit:0,method:"deposit_auto",note:"Pemotongan deposit otomatis saat tagihan dibuat",recordedBy:recordedBy||null,createdAt:now};
       }
     }
-    for(const cat of ["kas","air","sampah"]){
+    for(const cat of ["air"]){
       if(depositSummary[cat]>0){
         const balance=balances?.[cat]||{};
         updates[`category_balances/${cat}`]={...balance,balance:(Number(balance.balance)||0)+depositSummary[cat],income:(Number(balance.income)||0)+depositSummary[cat],updatedAt:now};
@@ -297,7 +297,7 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
     const verifyPaths=[`billing_runs/${period}/status`,`bills/${period}`];
     for(const [id] of active) verifyPaths.push(`arrearsLedger/${id}/${period}`);
-    for(const cat of ["kas","air","sampah"]) if(depositSummary[cat]>0) verifyPaths.push(`category_balances/${cat}`);
+    for(const cat of ["air"]) if(depositSummary[cat]>0) verifyPaths.push(`category_balances/${cat}`);
     if(Object.keys(updates).some(path=>path.startsWith("deposits/"))) verifyPaths.push("deposits");
     if(Object.keys(updates).some(path=>path.startsWith("deposit_ledger/"))) verifyPaths.push("deposit_ledger");
     if(Object.keys(updates).some(path=>path.startsWith(`paymentsByMonth/${period}/`))) verifyPaths.push(`paymentsByMonth/${period}`);
@@ -307,7 +307,7 @@ export async function createMonthlyBills(period, recordedBy) {
       await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
       await setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining);
     }
-    for(const cat of ["kas","air","sampah"]){
+    for(const cat of ["air"]){
       if(depositSummary[cat]>0){
         const txRef=push(root(`transactionsByMonth/${period}`));
         const summaryId=txRef.key;
