@@ -4,13 +4,13 @@ import { db } from "./firebase.js";
 const root = (path) => ref(db, path);
 export async function assertDatabaseOnline() {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
-  const connection = await get(root(".info/connected"));
-  if (connection.val() !== true) throw new Error("Database Firebase tidak terhubung. Perubahan belum dinyatakan berhasil; periksa koneksi lalu coba lagi.");
+  // Do not call get() on the reserved .info/connected path. Read requests
+  // below use Firebase get() directly; writes require server acknowledgement.
   return true;
 }
 export async function writeAndVerify(updates, verifyPaths=[]) {
   await assertDatabaseOnline();
-  await update(ref(db), updates);
+  await update(ref(db), updates); // resolves only after Firebase acknowledges the write
   for (const path of verifyPaths) {
     const snap = await get(root(path));
     if (!snap.exists()) throw new Error("Server belum mengonfirmasi data tersimpan pada " + path + ". Periksa database sebelum mengulangi transaksi.");
@@ -19,7 +19,7 @@ export async function writeAndVerify(updates, verifyPaths=[]) {
 }
 
 export async function read(path) {
-  await assertDatabaseOnline();
+  if (!db) throw new Error("Firebase belum dikonfigurasi.");
   const snap = await get(root(path));
   return snap.exists() ? snap.val() : null;
 }
