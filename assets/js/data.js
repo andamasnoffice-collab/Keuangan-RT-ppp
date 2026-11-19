@@ -619,7 +619,7 @@ export async function buildAnnualSummary(year, recordedBy=null) {
     read("arrearsSummary"),
     y>2000?read(`annual_summaries/${y-1}`):null
   ]);
-  const categories=["kas","sampah","air"],byCategory={},months={};
+  const categories=["kas","sampah","air"],byCategory={};
   for(const cat of categories){
     const opening=Number(previousYear?.byCategory?.[cat]?.closingOperatingBalance ?? settings?.openingBalances?.[cat])||0;
     let income=0,expense=0;
@@ -627,18 +627,14 @@ export async function buildAnnualSummary(year, recordedBy=null) {
       const item=row?.byCategory?.[cat]||{};
       const inc=Math.max(0,Number(item.income)||0),out=Math.max(0,Number(item.expenses)||0);
       income+=inc;expense+=out;
-      months[periods[index]]=months[periods[index]]||{income:0,expenses:0,byCategory:{}};
-      months[periods[index]].byCategory[cat]={income:inc,expenses:out};
-      months[periods[index]].income+=Number(row?.income)||0;
-      months[periods[index]].expenses+=Number(row?.expenses)||0;
-    });
+     });
     const deposit=Object.values(deposits||{}).reduce((sum,row)=>sum+(Number(row?.[cat])||0),0);
     byCategory[cat]={openingBalance:opening,income,expenses:expense,closingOperatingBalance:opening+income-expense,depositLiability:deposit};
   }
   const arrearsTotals={kas:0,sampah:0,air:0,total:0};
   for(const row of Object.values(arrears||{})) for(const cat of categories) arrearsTotals[cat]+=Math.max(0,Number(row?.[cat])||0);
   arrearsTotals.total=categories.reduce((sum,cat)=>sum+arrearsTotals[cat],0);
-  const payload={year:y,periodStart:periods[0],periodEnd:periods[11],byCategory,months,arrearsAtSnapshot:arrearsTotals,operatingBalanceAtSnapshot:categories.reduce((sum,cat)=>sum+(Number(balances?.[cat]?.balance)||0),0),depositLiabilityAtSnapshot:categories.reduce((sum,cat)=>sum+byCategory[cat].depositLiability,0),generatedAt:Date.now(),generatedBy:recordedBy||null,version:1};
+  const payload={year:y,periodStart:periods[0],periodEnd:periods[11],byCategory,arrearsAtSnapshot:arrearsTotals,operatingBalanceAtSnapshot:categories.reduce((sum,cat)=>sum+(Number(balances?.[cat]?.balance)||0),0),depositLiabilityAtSnapshot:categories.reduce((sum,cat)=>sum+byCategory[cat].depositLiability,0),generatedAt:Date.now(),generatedBy:recordedBy||null,version:1};
   await writeAndVerify({[`annual_summaries/${y}`]:payload},[`annual_summaries/${y}`]);
   return payload;
 }
