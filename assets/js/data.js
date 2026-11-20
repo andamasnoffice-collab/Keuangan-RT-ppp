@@ -1,5 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
+import { buildExpenseJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -498,6 +499,8 @@ export async function createExpense({category, amount, date, description, proof,
   const record = {id:expenseRef.key, category, amount:value, date:date || new Date().toISOString().slice(0,10), description:String(description).trim(), proof:String(proof).trim(), recordedBy:recordedBy || null, createdAt:timestamp};
   const updates = {};
   updates[`expensesByMonth/${period}/${expenseRef.key}`] = record;
+  const journal=buildExpenseJournal({id:"expense_"+expenseRef.key,period,date:record.date,category,amount:value,description:record.description,createdAt:timestamp});
+  if(journal)updates[`journal_entries/${journal.id}`]=journal;
   updates[`transactionsByMonth/${period}/${txRef.key}`] = {...record, id:txRef.key, type:"expense", referenceId:expenseRef.key};
   updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
   const logRef = push(root("audit_logs"));
