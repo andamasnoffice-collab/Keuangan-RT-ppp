@@ -819,16 +819,43 @@ async function runMasterDelete(mode){
   });
 }
 async function renderTransactions(c){
-  const current=monthKey();
-  c.innerHTML=`<div class="section-head"><h3>Riwayat transaksi</h3><label class="field">Periode<input id="transactionPeriod" type="month" value="${current}"></label></div><div id="transactionHistory" class="table-wrap">Memuat…</div>`;
-  const draw=async()=>{
-    const period=$("#transactionPeriod").value||current;
-    const tx=await getMonthTransactions(period);
-    const rows=Object.values(tx).sort((a,b)=>Number(b.createdAt||b.date||0)-Number(a.createdAt||a.date||0));
-    $("#transactionHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${new Date(x.date||x.createdAt).toLocaleDateString("id-ID")}</td><td>${escapeHtml(x.type||"-")}</td><td>${escapeHtml(x.category||"-")}</td><td>${escapeHtml(x.description||x.referenceId||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Tidak ada transaksi pada periode ini.</td></tr>'}</tbody></table>`;
+  const current=monthKey(),currentYear=Number(current.slice(0,4));
+  const [monthly,balances,settings]=await Promise.all([read("financeSummaryByMonth"),read("category_balances"),getBillingSettings()]);
+  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings?.goLivePeriod||"")?settings.goLivePeriod:`${currentYear}-01`;
+  const years=[...new Set([currentYear,...Object.keys(monthly||{}).filter(validPeriod).map(p=>Number(p.slice(0,4)))])].filter(y=>y>=Number(goLive.slice(0,4))&&y<=currentYear).sort((a,b)=>b-a);
+  const categories=["kas","air","sampah"],labels={kas:"Kas RT",air:"Air",sampah:"Sampah",lainnya:"Lainnya"};
+  const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  c.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Rekap mutasi bulanan</h3><p class="tiny muted">Pemasukan diringkas per kategori. Pengeluaran diringkas berdasarkan keterangan transaksi.</p></div><label class="field">Tahun<select id="transactionYear">${years.map(y=>`<option value="${y}" ${y===currentYear?"selected":""}>${y}</option>`).join("")}</select></label></div><div id="transactionHistory" class="table-wrap">Memuat rekap…</div></section>`;
+  const host=$("#transactionHistory");
+  const draw=()=>{
+    const year=Number($("#transactionYear").value),yearStart=`${year}-01`,yearEnd=year===currentYear?current:`${year}-12`,periods=[];
+    for(let p=yearStart;p<=yearEnd;p=nextMonth(p))if(p>=goLive)periods.push(p);
+    const baseOpening=categories.reduce((sum,cat)=>sum+(Number(balances?.[cat]?.openingBalance??settings?.openingBalances?.[cat])||0),0);
+    const netBefore=Object.entries(monthly||{}).filter(([p])=>validPeriod(p)&&p>=goLive&&p<yearStart).reduce((sum,[,row])=>sum+(Number(row?.income)||0)-(Number(row?.expenses)||0),0);
+    let running=baseOpening+netBefore,totalIncome=0,totalExpense=0;
+    const detailList=(items,type)=>{
+      const grouped=new Map();
+      for(const item of Object.values(items||{})){
+        const desc=String(item.description||(type==="income"?"Pemasukan":"Pengeluaran")),category=labels[item.category]||labels.lainnya;
+        const key=type==="expense"?desc+"|"+category:category,old=grouped.get(key)||{description:type==="income"?category:desc,category,amount:0,count:0};
+        old.amount+=Math.max(0,Number(item.amount)||0);old.count++;grouped.set(key,old);
+      }
+      return [...grouped.values()].sort((a,b)=>b.amount-a.amount);
+    };
+    const detailTable=(title,items)=>`<div class="panel" style="margin:8px 0"><b>${title}</b><div class="table-wrap"><table><thead><tr><th>Keterangan</th><th>Kategori</th><th>Jumlah transaksi</th><th>Nominal</th></tr></thead><tbody>${items.map(x=>`<tr><td>${escapeHtml(x.description)}</td><td>${escapeHtml(x.category)}</td><td>${x.count}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Tidak ada rincian.</td></tr>'}</tbody></table></div></div>`;
+    const rows=periods.map(period=>{
+      const row=monthly?.[period]||{},start=running,income=Math.max(0,Number(row.income)||0),expense=Math.max(0,Number(row.expenses)||0),end=start+income-expense;
+      running=end;totalIncome+=income;totalExpense+=expense;
+      const incomeByCategory=categories.map(cat=>({category:labels[cat],amount:Math.max(0,Number(row.byCategory?.[cat]?.income)||0)})).filter(x=>x.amount>0);
+      const expenseByCategory=categories.map(cat=>({category:labels[cat],amount:Math.max(0,Number(row.byCategory?.[cat]?.expenses)||0)})).filter(x=>x.amount>0);
+      const incomeItems=detailList(row.incomeItems,"income"),expenseItems=detailList(row.expenseItems,"expense"),month=monthNames[Number(period.slice(5,7))-1];
+      const incomeBreakdown=incomeByCategory.map(x=>`<span class="pill">${x.category}: <b>${money(x.amount)}</b></span>`).join(" ")||'<span class="muted tiny">Belum ada pemasukan</span>';
+      const expenseBreakdown=expenseByCategory.map(x=>`<span class="pill">${x.category}: <b>${money(x.amount)}</b></span>`).join(" ")||'<span class="muted tiny">Belum ada pengeluaran</span>';
+      return `<tr><td><b>${month}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount"><b>${money(end)}</b></td></tr><tr><td colspan="5"><details class="transaction-month-detail"><summary>Lihat rincian ${month} · Pemasukan ${money(income)} · Pengeluaran ${money(expense)}</summary><div class="grid stats" style="margin:10px 0"><div class="stat"><div class="label">Pemasukan per kategori</div><div class="value">${incomeBreakdown}</div></div><div class="stat"><div class="label">Pengeluaran per kategori</div><div class="value">${expenseBreakdown}</div></div></div>${detailTable("Rincian pemasukan",incomeItems)}${detailTable("Rincian pengeluaran",expenseItems)}<p class="tiny muted">Saldo akhir bulan ini: <b>${money(end)}</b>. Saldo tersebut menjadi saldo awal bulan berikutnya.</p></details></td></tr>`;
+    }).join("");
+    host.innerHTML=`<table><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Total pemasukan</th><th>Total pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">Belum ada mutasi pada tahun ini.</td></tr>'}<tr class="ledger-total"><td><b>Total tahun ${year}</b></td><td class="amount">${money(baseOpening+netBefore)}</td><td class="amount income-value">${money(totalIncome)}</td><td class="amount expense-value">${money(totalExpense)}</td><td class="amount"><b>${money(running)}</b></td></tr></tbody></table><p class="tiny muted" style="margin-top:10px">Klik “Lihat rincian” pada setiap bulan untuk melihat sumber pemasukan dan keterangan pengeluaran. Transaksi asli tetap tersimpan; yang diringkas hanya tampilannya.</p>`;
   };
-  await draw();
-  $("#transactionPeriod").addEventListener("change",draw);
+  $("#transactionYear").addEventListener("change",draw);draw();
 }
 
 async function renderReports(c){
