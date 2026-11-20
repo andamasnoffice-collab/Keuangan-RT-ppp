@@ -3,6 +3,7 @@ import { ref, get, update, runTransaction, push } from "https://www.gstatic.com/
 
 const $=s=>document.querySelector(s);
 const money=n=>"Rp "+new Intl.NumberFormat("id-ID").format(Number(n)||0);
+const escapeHtml=v=>String(v??"").replace(/[&<>"\']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\'":"&#39;"}[ch]));
 const validPeriod=v=>/^\d{4}-(0[1-9]|1[0-2])$/.test(v);
 const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Air",sampah:"Sampah"};
@@ -99,7 +100,7 @@ async function renderMigration(c){
       <h4>Saldo kas pembuka</h4><p>${parsed.cash.map(x=>labels[x.category]+": "+money(x.amount)).join(" · ")||"Tidak diisi"}</p>
       <p class="tiny muted">Data tunggakan per bulan: ${parsed.arrears.slice(0,8).map(x=>escapeHtml(x.block+" / "+x.period+" / "+x.category+" / "+money(x.amount))).join("<br>")}${parsed.arrears.length>8?"<br>… dan "+(parsed.arrears.length-8)+" baris lainnya":""}</p>
       <button id="confirmMigration" class="btn primary" ${production||marker?.status==="completed"?"disabled":""}>Sahkan migrasi saldo awal</button></div>`;
-      if(!production&&marker?.status!=="completed")$("#confirmMigration").addEventListener("click",saveMigration);
+      if(!production&&marker?.status!=="completed")$("#confirmMigration").addEventListener("click",()=>saveMigration().catch(err=>{const p=$("#migrationPreview");p.insertAdjacentHTML("beforeend",`<p class="error">${escapeHtml(err.message)}</p>`);}));
     }catch(err){parsed=null;target.textContent="File tidak dapat diproses: "+err.message;}
   });
 }
