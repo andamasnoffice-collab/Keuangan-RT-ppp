@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -117,6 +117,45 @@ export async function setHouseholdArrearPeriod(householdId, period, category, am
   await set(root(`arrearsSummary/${householdId}`),totals);
   return totals;
 }
+export async function waiveHouseholdBill({householdId,period,category,reason,recordedBy}) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  if(!householdId||!validPeriod(period)||!["kas","air","sampah"].includes(category)) throw new Error("Rumah, periode, atau kategori pemutihan tidak valid.");
+  if(period>currentPeriodKey()) throw new Error("Pemutihan hanya dapat dilakukan untuk periode berjalan atau sebelumnya.");
+  const cleanReason=String(reason||"").trim().slice(0,180);
+  if(!cleanReason) throw new Error("Alasan pemutihan wajib diisi.");
+  const billPath="bills/"+period+"/"+householdId+"/"+category;
+  const ledgerPath="arrearsLedger/"+householdId+"/"+period;
+  const [bill,ledger,house]=await Promise.all([read(billPath),read(ledgerPath),read("households/"+householdId)]);
+  if(!house) throw new Error("Data rumah tidak ditemukan.");
+  if(ledger?.waivers?.[category]||bill?.waived) throw new Error("Periode ini sudah diputihkan.");
+  const due=Math.max(0,Number(ledger?.[category]??bill?.remaining??((Number(bill?.amount)||0)-(Number(bill?.paidAmount)||0)))||0);
+  if(due<=0) throw new Error("Tidak ada sisa tagihan untuk diputihkan.");
+  const now=Date.now(),waiverId="waiver_"+householdId+"_"+period+"_"+category;
+  const journal=buildWaiverJournal({id:waiverId,period,date:period+"-01",householdId,category,amount:due,reason:cleanReason,recordedBy,createdAt:now});
+  const updatedBill={...(bill||{}),amount:Number(bill?.amount)||due,paidAmount:Number(bill?.paidAmount)||0,remaining:0,status:"waived",waived:true,waivedAmount:due,waiverId,waivedAt:now,waivedBy:recordedBy||null,waiverReason:cleanReason};
+  const updates={
+    [billPath]:updatedBill,
+    [ledgerPath+"/"+category]:0,
+    [ledgerPath+"/waivers/"+category]:{id:waiverId,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now},
+    ["receivable_waivers/"+householdId+"/"+period+"/"+category]:{id:waiverId,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now},
+    ["audit_logs/"+push(root("audit_logs")).key]:{type:"household_bill_waived",householdId,period,category,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now}
+  };
+  if(journal) updates["journal_entries/"+journal.id]=journal;
+  await writeAndVerify(updates,[billPath,ledgerPath+"/"+category,"receivable_waivers/"+householdId+"/"+period+"/"+category]);
+  const fresh=await getHouseholdArrearLedger(householdId);
+  const totals={kas:0,air:0,sampah:0,total:0,periodCount:0,updatedAt:Date.now()};
+  for(const [month,row] of Object.entries(fresh||{})){
+    if(!validPeriod(month)) continue;
+    let hasDue=false;
+    for(const cat of ["kas","air","sampah"]){const value=Math.max(0,Number(row?.[cat])||0);totals[cat]+=value;if(value>0)hasDue=true;}
+    if(hasDue)totals.periodCount++;
+  }
+  totals.total=totals.kas+totals.air+totals.sampah;
+  await set(root("arrearsSummary/"+householdId),totals);
+  await refreshPublicSnapshotSafely();
+  return {householdId,period,category,amount:due,waiverId};
+}
+
 export async function getHouseholdArrearLedger(householdId) {
   return await read(`arrearsLedger/${householdId}`) || {};
 }
