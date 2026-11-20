@@ -186,8 +186,8 @@ export async function createMonthlyBills(period, recordedBy) {
   }
   let primaryCommitted=false;
   try {
-    const [homes,settings,existing,deposits,balances]=await Promise.all([
-      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances")
+    const [homes,settings,existing,deposits,balances,advancePayments]=await Promise.all([
+      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances"),read("fixed_advance_payments")
     ]);
     const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
     if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
@@ -196,9 +196,12 @@ export async function createMonthlyBills(period, recordedBy) {
     const now=Date.now();
     for(const [id,h] of active){
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
+      const fixedAdvance=advancePayments?.[id]?.[period]||{};
+      const kasAdvance=Math.min(raw.kas,Math.max(0,Number(fixedAdvance.kas?.amount)||0));
+      const sampahAdvance=Math.min(raw.sampah,Math.max(0,Number(fixedAdvance.sampah?.amount)||0));
       const row={
-        kas:{amount:raw.kas,paidAmount:0,remaining:raw.kas,status:raw.kas>0?"unpaid":"paid",createdAt:now},
-        sampah:{amount:raw.sampah,paidAmount:0,remaining:raw.sampah,status:raw.sampah>0?"unpaid":"paid",createdAt:now},
+        kas:{amount:raw.kas,paidAmount:kasAdvance,remaining:Math.max(0,raw.kas-kasAdvance),status:raw.kas===0||kasAdvance>=raw.kas?"paid":kasAdvance>0?"partial":"unpaid",...(kasAdvance?{advancePaymentId:fixedAdvance.kas.paymentId,advancePaidAt:fixedAdvance.kas.paidAt,rateLocked:Number(fixedAdvance.kas.rate)||raw.kas}:{}),createdAt:now},
+        sampah:{amount:raw.sampah,paidAmount:sampahAdvance,remaining:Math.max(0,raw.sampah-sampahAdvance),status:raw.sampah===0||sampahAdvance>=raw.sampah?"paid":sampahAdvance>0?"partial":"unpaid",...(sampahAdvance?{advancePaymentId:fixedAdvance.sampah.paymentId,advancePaidAt:fixedAdvance.sampah.paidAt,rateLocked:Number(fixedAdvance.sampah.rate)||raw.sampah}:{}),createdAt:now},
         air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
       const applied={};
@@ -616,7 +619,7 @@ export async function refreshPublicSnapshotSafely() {
   catch(error) { console.error("Sinkronisasi tampilan publik tertunda:",error); return false; }
 }
 
-const MASTER_DATA_NODES=["households","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
+const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
 export async function deleteMasterData({mode,period,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
   const stamp=Date.now(),updates={};
@@ -631,6 +634,8 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   if(mode!=="period"||!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period||""))) throw new Error("Pilih periode yang valid.");
   const p=period,year=Number(p.slice(0,4));
   for(const node of ["bills","paymentsByMonth","expensesByMonth","transactionsByMonth","water_readings","financeSummaryByMonth","billing_runs","water_import_runs"]) updates[`${node}/${p}`]=null;
+  const allAdvances=await read("fixed_advance_payments")||{};
+  for(const [houseId,periodRows] of Object.entries(allAdvances))if(periodRows?.[p])updates[`fixed_advance_payments/${houseId}/${p}`]=null;
   const periodOf=row=>{
     const raw=row?.date||row?.period||row?.createdAt||row?.timestamp;
     if(typeof raw==="number")return new Date(raw).toISOString().slice(0,7);
