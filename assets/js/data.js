@@ -137,11 +137,10 @@ export async function waiveHouseholdBill({householdId,period,category,reason,rec
     [billPath]:updatedBill,
     [ledgerPath+"/"+category]:0,
     [ledgerPath+"/waivers/"+category]:{id:waiverId,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now},
-    ["receivable_waivers/"+householdId+"/"+period+"/"+category]:{id:waiverId,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now},
     ["audit_logs/"+push(root("audit_logs")).key]:{type:"household_bill_waived",householdId,period,category,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now}
   };
   if(journal) updates["journal_entries/"+journal.id]=journal;
-  await writeAndVerify(updates,[billPath,ledgerPath+"/"+category,"receivable_waivers/"+householdId+"/"+period+"/"+category]);
+  await writeAndVerify(updates,[billPath,ledgerPath+"/"+category]);
   const fresh=await getHouseholdArrearLedger(householdId);
   const totals={kas:0,air:0,sampah:0,total:0,periodCount:0,updatedAt:Date.now()};
   for(const [month,row] of Object.entries(fresh||{})){
@@ -739,7 +738,7 @@ export async function refreshPublicSnapshotSafely() {
   catch(error) { console.error("Sinkronisasi tampilan publik tertunda:",error); return false; }
 }
 
-const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","receivable_waivers","billing_runs","water_import_runs","public_views","settings"];
+const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
 export async function deleteMasterData({mode,period,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
   const stamp=Date.now(),updates={};
@@ -782,12 +781,10 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   }
 
   // Reverse deposit movements belonging to the deleted month, then keep all other periods intact.
-  const [depositLedger,deposits,monthly,balances,settings,annual,waivers]=await Promise.all([
+  const [depositLedger,deposits,monthly,balances,settings,annual]=await Promise.all([
     read("deposit_ledger"),read("deposits"),read("financeSummaryByMonth"),
-    read("category_balances"),getBillingSettings(),read("annual_summaries"),read("receivable_waivers")
+    read("category_balances"),getBillingSettings(),read("annual_summaries")
   ]);
-  for(const [houseId,periods] of Object.entries(waivers||{}))if(periods?.[p])updates[`receivable_waivers/${houseId}/${p}`]=null;
-
   const removedDeposits={};
   for(const [id,row] of Object.entries(depositLedger||{})){
     if(periodOf(row)!==p)continue;
