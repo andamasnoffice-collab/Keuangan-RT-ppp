@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance} from "../assets/js/accounting.js";
+import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance,paymentRecognizedCash} from "../assets/js/accounting.js";
 const period="2026-11",date="2026-11-20";
 test("invoice accrual records receivable and revenue, not cash",()=>{
  const j=buildInvoiceJournal({id:"inv1",period,date,householdId:"h1",category:"kas",amount:100000});
@@ -41,7 +41,6 @@ test("ledger and cash flow exclude invoices and deposit applications from cash m
 });
 
 test("future fixed prepayment is cash received but not recognized as income until invoice application",()=>{
- const {paymentRecognizedCash}=await import("../assets/js/accounting.js");
  assert.equal(paymentRecognizedCash({cash:100000,applied:100000,advance:true}),0);
  assert.equal(paymentRecognizedCash({cash:100000,applied:100000}),100000);
 });
