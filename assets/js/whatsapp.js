@@ -1,6 +1,6 @@
 import { ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { read, getMonthBills } from "./data.js?v=20261120-audit6";
+import { read, getMonthBills } from "./data.js?v=20261120-audit7";
 
 const CATEGORIES = ["kas", "sampah", "air"];
 const LABELS = { kas: "Kas RT", sampah: "Uang sampah", air: "Uang air" };
