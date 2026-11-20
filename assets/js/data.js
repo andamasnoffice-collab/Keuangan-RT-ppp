@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -212,6 +212,8 @@ export async function createMonthlyBills(period, recordedBy) {
           if(already!==undefined&&already!==null)continue;
           updates["bills/"+cursor+"/"+id+"/"+cat]={amount:rate,paidAmount:0,remaining:rate,status:"unpaid",openingArrears:true,createdAt:now};
           updates["arrearsLedger/"+id+"/"+cursor+"/"+cat]=rate;
+          const openingJournal=buildOpeningJournal({id:"opening_arrears_"+id+"_"+cursor+"_"+cat,period:goLivePeriod,date:goLivePeriod+"-01",cash:{},receivables:{[cat]:rate},deposits:{},createdAt:now});
+          if(openingJournal)updates["journal_entries/"+openingJournal.id]=openingJournal;
         }
       }
       const airOpening=Math.max(0,Number(h.openingArrears?.air)||0);
@@ -227,6 +229,10 @@ export async function createMonthlyBills(period, recordedBy) {
         air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
       if(applyAirOpening){row.air.amount+=airOpening;row.air.remaining+=airOpening;row.air.openingArrears=airOpening;row.air.status="unpaid";updates["arrearsLedger/"+id+"/"+goLivePeriod+"/air"]=airOpening;updates["households/"+id+"/openingAirArrearsRecorded"]=true;}
+      if(applyAirOpening){
+        const openingJournal=buildOpeningJournal({id:"opening_arrears_"+id+"_"+goLivePeriod+"_air",period:goLivePeriod,date:goLivePeriod+"-01",cash:{},receivables:{air:airOpening},deposits:{},createdAt:now});
+        if(openingJournal)updates["journal_entries/"+openingJournal.id]=openingJournal;
+      }
       const applied={};
       for(const cat of ["air"]){
         const available=Math.max(0,Number(deposits?.[id]?.[cat])||0);
@@ -243,7 +249,7 @@ export async function createMonthlyBills(period, recordedBy) {
       updates[`bills/${period}/${id}`]=row;
       updates[`arrearsLedger/${id}/${period}`]={kas:row.kas.remaining,sampah:row.sampah.remaining,air:row.air.remaining,updatedAt:now};
       for(const cat of ["kas","sampah","air"]){
-        const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:row[cat].amount,createdAt:now});
+        const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:cat==="air"?Math.max(0,row.air.amount-Number(row.air.openingArrears||0)):row[cat].amount,createdAt:now});
         if(invoice)updates[`journal_entries/${invoice.id}`]=invoice;
       }
       if(Object.keys(applied).length){
