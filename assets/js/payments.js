@@ -1,6 +1,6 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, refreshPublicSnapshot } from "./data.js?v=20261119-deposit-air-only1";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit8";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
@@ -26,26 +26,30 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
     if(!id){box.innerHTML='<div class="empty">Pilih rumah untuk menampilkan tagihan.</div>';return;}
     box.innerHTML='<div class="empty">Mengambil tagihan dan deposit…</div>';
     try{
-      const {getHouseholdArrearLedger,read}=await import("./data.js?v=20261119-checkbox1");
-      const [ledger,dep]=await Promise.all([getHouseholdArrearLedger(id),read(`deposits/${id}`)]);
+      const [ledger,dep,settings,advances]=await Promise.all([getHouseholdArrearLedger(id),read("deposits/"+id),getBillingSettings(),read("fixed_advance_payments/"+id)]);
       const periods=Object.keys(ledger||{}).filter(p=>/^\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
       const periodBills=periods.map(period=>({period,categories:ledger[period]||{}}));
       const rowsFor=cat=>periodBills.filter(row=>num(row.categories?.[cat])>0);
-      const ledgerYears=periods.map(p=>Number(p.slice(0,4)));
-      const currentYear=new Date().getFullYear();
-      const firstYear=ledgerYears.length?Math.min(currentYear,...ledgerYears):currentYear;
-      const lastYear=ledgerYears.length?Math.max(currentYear,...ledgerYears):currentYear;
+      const now=new Date(),currentPeriod=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+      const firstPeriod=periods.length&&periods[0]<currentPeriod?periods[0]:currentPeriod;
+      const startParts=firstPeriod.split("-").map(Number);
+      const endDate=new Date(now.getFullYear(),now.getMonth()+12,1);
+      const endPeriod=endDate.getFullYear()+"-"+String(endDate.getMonth()+1).padStart(2,"0");
       const displayPeriods=[];
-      for(let year=firstYear;year<=lastYear;year++){
-        for(let month=1;month<=12;month++){
-          const period=`${year}-${String(month).padStart(2,"0")}`;
-          displayPeriods.push({period,categories:ledger[period]||{},billExists:!!ledger[period]});
-        }
+      for(let y=startParts[0];y<=endDate.getFullYear();y++)for(let m=1;m<=12;m++){
+        const period=y+"-"+String(m).padStart(2,"0");
+        if(period<firstPeriod||period>endPeriod)continue;
+        displayPeriods.push({period,categories:ledger[period]||{}});
       }
-      const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,displayPeriods.map(row=>({
-        ...row,billExists:row.billExists&&Object.prototype.hasOwnProperty.call(row.categories,cat),
-        amount:num(row.categories?.[cat])
-      }))]));
+      const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,displayPeriods.map(row=>{
+        const hasBill=Object.prototype.hasOwnProperty.call(row.categories,cat);
+        const future=row.period>currentPeriod;
+        const advance=advances?.[row.period]?.[cat]||null;
+        const currentRate=Number(cat==="kas"?settings.kasMonthly:settings.sampahMonthly)||0;
+        const lockedRate=Number(advance?.rate)||currentRate;
+        const amount=hasBill?num(row.categories[cat]):future?Math.max(0,lockedRate-num(advance?.amount)):0;
+        return {...row,billExists:hasBill||future,sequence:hasBill||future,future,advance,amount,paid:hasBill?num(row.categories[cat])===0:!!advance&&num(advance.amount)>=lockedRate};
+      })]));
       const airRows=rowsFor("air");
       const airGross=airRows.reduce((sum,row)=>sum+num(row.categories.air),0);
       const airDeposit=num(dep?.air);
@@ -59,9 +63,10 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Centang bulan yang dilunasi penuh</span></div><strong class="fixed-total">${money(0)}</strong></div>
               <div class="payment-month-checklist" data-fixed-list="${cat}">
                 ${rows.map(row=>{
-                  const paid=row.billExists&&row.amount===0;
-                  const status=!row.billExists?"Tagihan belum dibuat":paid?"Sudah lunas":`Sisa tagihan: ${money(row.amount)}`;
-                  return `<label class="pay-month-row ${paid?"is-paid":!row.billExists?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" ${paid?"checked disabled":!row.billExists?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.billExists?money(row.amount):"—"}</strong></label>`;
+                  const paid=row.paid||row.billExists&&row.amount===0;
+                  const blocked=!row.billExists;
+                  const status=paid?"Sudah lunas":blocked?"Tagihan belum dibuat":row.future?"Pembayaran di muka · tarif dikunci":`Sisa tagihan: ${money(row.amount)}`;
+                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.future?money(row.advance?.rate||row.amount):row.billExists?money(row.amount):"—"}</strong></label>`;
                 }).join("")}
               </div>
               <small class="muted fixed-help">Wajib berurutan. Centang bulan pertama yang belum lunas, lalu bulan berikutnya. Tidak bisa melompati bulan.</small>
@@ -91,20 +96,20 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           <div class="summary-line"><span>Sisa tagihan Air setelah pembayaran</span><b id="sumAirShort">${money(Math.max(0,airGross-airDepositUsed))}</b></div>
           <div class="summary-line"><span><b>Total tunai yang diterima</b></span><b id="sumTotal">${money(0)}</b></div>
         </div>
-        <p class="muted-note payment-note">Kas RT dan Sampah selalu dibayar penuh sesuai nominal bulan yang dicentang. Air dapat dibayar sebagian; kelebihan pembayaran Air masuk ke deposit Air.</p>
+        <p class="muted-note payment-note">Kas RT dan Sampah dibayar penuh dan berurutan. Bulan mendatang dapat dibayar di muka dengan tarif dikunci saat transaksi. Air dapat dibayar sebagian; kelebihan pembayaran Air masuk ke deposit Air.</p>
         <button id="savePayment" class="btn primary full" type="button">Simpan pembayaran</button>`;
-      const fixedCards=[...box.querySelectorAll(".payment-category[data-category='kas'],.payment-category[data-category='sampah']")];
       const allFixedChecks=[...box.querySelectorAll(".fixed-month-check")];
       const airInput=box.querySelector(".air-payment-amount");
       const getSelected=cat=>[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check:checked`)].filter(c=>num(c.dataset.amount)>0);
       const updateFixed=cat=>{
         const checks=[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check`)];
-        const billable=checks.filter(c=>c.dataset.billExists==="true");
+        const billable=checks.filter(c=>c.dataset.sequence==="true");
         let openIndex=billable.findIndex(c=>!c.checked);
         checks.forEach(c=>{
-          if(c.dataset.billExists!=="true"){c.disabled=true;return;}
           if(c.checked&&num(c.dataset.amount)===0){c.disabled=true;return;}
-          c.disabled=openIndex<0?true:billable.indexOf(c)>openIndex;
+          const index=billable.indexOf(c);
+          if(index<0){c.disabled=true;return;}
+          c.disabled=c.dataset.billExists!=="true"||openIndex<0||index>openIndex;
         });
         const total=checks.filter(c=>c.checked&&num(c.dataset.amount)>0).reduce((s,c)=>s+num(c.dataset.amount),0);
         box.querySelector(`.payment-category[data-category="${cat}"] .fixed-total`).textContent=money(total);
@@ -139,30 +144,41 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       fixedCategories.forEach(updateFixed);calculate();
       box.querySelector("#savePayment").addEventListener("click",async()=>{
         const button=box.querySelector("#savePayment");
-        const selected=Object.fromEntries(fixedCategories.map(cat=>[cat,getSelected(cat).map(c=>({period:c.dataset.period,amount:num(c.dataset.amount)}))]));
+        const selected=Object.fromEntries(fixedCategories.map(cat=>[cat,getSelected(cat).map(c=>({period:c.dataset.period,amount:num(c.dataset.amount),future:c.dataset.future==="true"}))]));
         const kasTotal=selected.kas.reduce((s,x)=>s+x.amount,0),sampahTotal=selected.sampah.reduce((s,x)=>s+x.amount,0);
         const airCash=parseRupiah(airInput.value),airApplied=Math.min(airCash,Math.max(0,airGross-airDepositUsed)),airSurplus=Math.max(0,airCash-airApplied);
         if(!kasTotal&&!sampahTotal&&!airDepositUsed&&!airCash){toast("Centang bulan Kas RT/Sampah atau isi pembayaran Air terlebih dahulu.");return;}
         const date=box.querySelector("#paymentDate").value;
         if(!date){toast("Tanggal pembayaran wajib diisi.");return;}
         button.disabled=true;button.textContent="Menyimpan…";
+        let primarySaved=false,summaryDeltasRecovery=[],paymentPeriodRecovery="";
         try{
           const updates={},timestamp=Date.now(),paymentPeriod=String(date).slice(0,7);
+          paymentPeriodRecovery=paymentPeriod;
           const paymentRef=push(ref(db,`paymentsByMonth/${paymentPeriod}`));
-          const summaryDeltas=[];
+          const summaryDeltas=[];summaryDeltasRecovery=summaryDeltas;
           let totalApplied=0,totalDepositUsed=0,totalSurplus=0;
           const items=[];
           for(const cat of fixedCategories){
             const chosen=selected[cat];
             for(const item of chosen){
-              const current=await read(`bills/${item.period}/${id}/${cat}`)||{};
-              const currentRemaining=num(current.remaining??item.amount);
-              if(currentRemaining<=0)throw new Error(`Tagihan ${labels[cat]} ${monthLabel(item.period)} sudah lunas. Muat ulang data sebelum menyimpan.`);
-              if(currentRemaining!==item.amount)throw new Error(`Nominal tagihan ${labels[cat]} ${monthLabel(item.period)} berubah. Muat ulang data sebelum menyimpan.`);
-              updates[`bills/${item.period}/${id}/${cat}/paidAmount`]=num(current.paidAmount)+currentRemaining;
-              updates[`bills/${item.period}/${id}/${cat}/remaining`]=0;
-              updates[`bills/${item.period}/${id}/${cat}/status`]="paid";
-              updates[`arrearsLedger/${id}/${item.period}/${cat}`]=0;
+              let currentRemaining=item.amount;
+              if(item.future){
+                const [existingAdvance,latestSettings]=await Promise.all([read(`fixed_advance_payments/${id}/${item.period}/${cat}`),getBillingSettings()]);
+                if(existingAdvance)throw new Error(`Pembayaran di muka ${labels[cat]} ${monthLabel(item.period)} sudah tercatat. Muat ulang data.`);
+                const latestRate=num(cat==="kas"?latestSettings.kasMonthly:latestSettings.sampahMonthly);
+                if(latestRate!==item.amount)throw new Error(`Tarif ${labels[cat]} berubah. Muat ulang daftar pembayaran sebelum menyimpan.`);
+                updates[`fixed_advance_payments/${id}/${item.period}/${cat}`]={amount:latestRate,rate:latestRate,paymentId:paymentRef.key,paidAt:timestamp,date,recordedBy:currentUser?.uid||null,status:"paid"};
+              }else{
+                const current=await read(`bills/${item.period}/${id}/${cat}`)||{};
+                currentRemaining=num(current.remaining??item.amount);
+                if(currentRemaining<=0)throw new Error(`Tagihan ${labels[cat]} ${monthLabel(item.period)} sudah lunas. Muat ulang data sebelum menyimpan.`);
+                if(currentRemaining!==item.amount)throw new Error(`Nominal tagihan ${labels[cat]} ${monthLabel(item.period)} berubah. Muat ulang data sebelum menyimpan.`);
+                updates[`bills/${item.period}/${id}/${cat}/paidAmount`]=num(current.paidAmount)+currentRemaining;
+                updates[`bills/${item.period}/${id}/${cat}/remaining`]=0;
+                updates[`bills/${item.period}/${id}/${cat}/status`]="paid";
+                updates[`arrearsLedger/${id}/${item.period}/${cat}`]=0;
+              }
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc=`Pelunasan ${labels[cat]} bulan ${monthLabel(item.period)}`;
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:cat,amount:currentRemaining,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
@@ -188,7 +204,9 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               const paidNow=useDeposit+useCash;
               if(paidNow>0){
                 const current=await read(`bills/${row.period}/${id}/air`)||{};
-                const remaining=Math.max(0,due-paidNow);
+                const currentRemaining=num(current.remaining??(Number(current.amount||0)-Number(current.paidAmount||0)));
+                if(currentRemaining!==due)throw new Error(`Sisa tagihan Air ${monthLabel(row.period)} berubah. Muat ulang data sebelum menyimpan.`);
+                const remaining=Math.max(0,currentRemaining-paidNow);
                 updates[`bills/${row.period}/${id}/air/paidAmount`]=num(current.paidAmount)+paidNow;
                 updates[`bills/${row.period}/${id}/air/remaining`]=remaining;
                 updates[`bills/${row.period}/${id}/air/status`]=remaining===0?"paid":"partial";
@@ -215,10 +233,13 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             items.push({cat:"air",cash:airCash,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
           }
           const totalCash=kasTotal+sampahTotal+airCash;
-          updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:paymentPeriod,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const auditRef=push(ref(db,"audit_logs"));
-          updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:monthKey,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-          await writeAndVerify(updates,[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]);
+          updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:paymentPeriod,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          const verifyPaths=[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`];
+          for(const cat of fixedCategories)for(const item of selected[cat])if(item.future)verifyPaths.push(`fixed_advance_payments/${id}/${item.period}/${cat}`);
+          await writeAndVerify(updates,verifyPaths);
+          primarySaved=true;
           for(const item of summaryDeltas)await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
           for(const cat of categories){
             for(const row of periodBills){
@@ -226,10 +247,23 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               if(Object.prototype.hasOwnProperty.call(updates,path))await setHouseholdArrearPeriod(id,row.period,cat,updates[path]);
             }
           }
-          await refreshPublicSnapshot(monthKey);
-          toast("Pembayaran berhasil disimpan, arus kas diperbarui, dan daftar publik disinkronkan.");
+          const publicSynced=await refreshPublicSnapshotSafely();
+          toast(publicSynced?"Pembayaran tersimpan, arus kas diperbarui, dan daftar publik disinkronkan.":"Pembayaran tersimpan, tetapi sinkronisasi daftar publik tertunda.");
           select.dispatchEvent(new Event("change"));
-        }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
+        }catch(err){
+          if(primarySaved){
+            try{
+              for(const item of summaryDeltasRecovery)await applyMonthlySummaryDelta(paymentPeriodRecovery,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
+              const latestLedger=await getHouseholdArrearLedger(id);
+              for(const cat of categories)for(const row of periodBills)await setHouseholdArrearPeriod(id,row.period,cat,latestLedger?.[row.period]?.[cat]||0);
+              const synced=await refreshPublicSnapshotSafely();
+              toast(synced?"Pembayaran tersimpan dan sinkronisasi ringkasan berhasil dipulihkan.":"Pembayaran tersimpan; sinkronisasi publik masih tertunda.");
+            }catch(recoveryError){
+              toast("Pembayaran utama sudah tersimpan. Jangan ulangi pembayaran ini; perlu pemeriksaan sinkronisasi: "+recoveryError.message);
+            }
+            select.dispatchEvent(new Event("change"));
+          }else toast("Gagal menyimpan pembayaran: "+err.message);
+        }
         finally{button.disabled=false;button.textContent="Simpan pembayaran";}
       });
     }catch(err){box.innerHTML=`<div class="muted-note">Gagal memuat tagihan: ${esc(err.message)}</div>`;}

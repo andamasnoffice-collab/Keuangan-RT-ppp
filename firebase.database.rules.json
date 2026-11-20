@@ -89,6 +89,22 @@
     "water_import_runs": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "annual_summaries": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "fixed_advance_payments": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "opening_migrations": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "opening_migration_records": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }

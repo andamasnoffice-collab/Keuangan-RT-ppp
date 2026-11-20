@@ -1,9 +1,10 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary } from "./data.js?v=20261119-deposit-air-only1";
-import { renderPaymentPage } from "./payments.js?v=20261119-checklist12m3";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
+import { renderPaymentPage } from "./payments.js?v=20261120-audit8";
 import { renderWhatsAppPage } from "./whatsapp.js";
+import { renderOpeningMigration } from "./migration.js?v=20261120-migration1";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
@@ -11,7 +12,7 @@ const blockCollator=new Intl.Collator("id",{numeric:true,sensitivity:"base"});
 const compareBlocks=(a,b)=>blockCollator.compare(String(a||"").trim(),String(b||"").trim());
 const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) || 0;
 const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
-function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
+function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const THEME_KEY="keuangan-rt-theme";
 function applyTheme(theme){
@@ -132,7 +133,7 @@ function card(label,value,sub=""){return `<div class="stat"><div class="label">$
 function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
-  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan",masterData:"Master Data"};
+  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",settings:"Pengaturan",masterData:"Master Data",openingMigration:"Migrasi Pembukuan"};
   title(names[page]||"Dashboard");
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
@@ -150,9 +151,9 @@ async function render(){
     else if(page==="transactions") await renderTransactions(c);
     else if(page==="reports") await renderReports(c);
     else if(page==="whatsapp") await renderWhatsAppPage(c,{households,currentUser,currentProfile,toast});
-    else if(page==="users") c.innerHTML='<div class="muted-note">Semua akun yang berhasil login memiliki hak pengelolaan yang sama. Penambahan akun dilakukan melalui Firebase Authentication oleh pemilik proyek.</div>';
     else if(page==="settings") await renderSettings(c);
     else if(page==="masterData") renderMasterData(c);
+    else if(page==="openingMigration") await renderOpeningMigration(c,households,currentUser?.uid);
   }catch(e){c.innerHTML=`<div class="muted-note">Gagal memuat data: ${e.message}</div>`;}
 }
 async function renderSettings(c){
@@ -177,7 +178,7 @@ async function renderSettings(c){
       <span id="settingsSavedAt" class="muted tiny" style="margin-left:10px">${settings.updatedAt?`Terakhir diubah: ${new Date(settings.updatedAt).toLocaleString("id-ID")}`:"Belum pernah disimpan"}</span>
       </form>
     </div>
-    <div class="muted-note" style="margin-top:14px">Catatan: perubahan tarif tidak boleh menimpa tagihan bulan yang sudah terbentuk. Pengaturan ini menyimpan tarif ke Firebase; proses pembentukan tagihan bulanan otomatis dan pencatatan meter air merupakan tahap implementasi terpisah.</div>`;
+    <div class="muted-note" style="margin-top:14px">Catatan: perubahan tarif tidak boleh menimpa tagihan bulan yang sudah terbentuk. Pengaturan ini menyimpan tarif ke Firebase; tagihan dibuat satu kali secara manual dari Dashboard, sedangkan pencatatan dan koreksi meter tersedia pada tab Meteran Air.</div>`;
   bindRupiahInputs($("#billingSettingsForm"));
   $("#billingSettingsForm").addEventListener("submit",async e=>{
     e.preventDefault(); const f=new FormData(e.currentTarget);
@@ -340,9 +341,13 @@ async function renderDashboard(c){
   }else if(run?.status==="processing"){
     runBadge.className="pill warning";runBadge.textContent="Sedang diproses";
     runButton.disabled=true;runMessage.textContent="Pembuatan tagihan sedang berlangsung.";
+  }else if(run?.status==="needs_reconciliation"){
+    runBadge.className="pill danger";runBadge.textContent="Perlu rekonsiliasi";
+    runButton.disabled=true;runButton.textContent="Tagihan perlu pemeriksaan";
+    runMessage.textContent="Data tagihan utama sudah tersimpan, tetapi pembaruan ringkasan/tunggakan tidak selesai. Jangan buat ulang periode ini.";
   }else if(run?.status==="failed"){
     runBadge.className="pill warning";runBadge.textContent="Perlu dicoba ulang";
-    runMessage.textContent="Percobaan sebelumnya gagal. Tombol dapat digunakan kembali setelah penyebab kegagalan diperiksa.";
+    runMessage.textContent="Percobaan sebelumnya gagal sebelum data utama tersimpan. Periksa penyebabnya sebelum mencoba kembali.";
   }else{
     runBadge.className="pill";runBadge.textContent="Belum dibuat";
     runMessage.textContent="Klik sekali untuk membuat tagihan penuh bagi semua rumah aktif dan kontrak.";
@@ -360,12 +365,14 @@ async function renderDashboard(c){
     }
   });
   $("#publishPublicBtn").addEventListener("click", async ()=>{
+    const button=$("#publishPublicBtn");
+    button.disabled=true;button.textContent="Memperbarui…";
     try{
-      const [financeSummary,arrearsSummary,arrearsLedger]=await Promise.all([read("financeSummaryByMonth"),read("arrearsSummary"),read("arrearsLedger")]);
-      const currentAnnouncement=await read("public_views/announcement");
-      await publishPublicSnapshot(monthKey(),households,balances,financeSummary||{},arrearsSummary||{},arrearsLedger||{},currentAnnouncement||null);
-      toast("Informasi publik berhasil diperbarui.");
+      const synced=await refreshPublicSnapshotSafely();
+      if(!synced)throw new Error("Snapshot belum berhasil ditulis. Coba ulang setelah koneksi Firebase stabil.");
+      toast("Dashboard dan daftar tagihan publik berhasil diperbarui.");
     }catch(e){toast("Gagal memperbarui tampilan publik: "+e.message);}
+    finally{button.disabled=false;button.textContent="Perbarui Daftar Tagihan Publik";}
   });
 }
 function renderHouseholds(c){
@@ -540,6 +547,7 @@ function houseDialog(existing=null){
     if(existing)data.id=existing.id;
     const id=await saveHousehold(data);
     if(shouldRecordOpeningArrears){for(const cat of ["kas","air","sampah"])if(openingArrears[cat]>0)await setHouseholdArrearPeriod(id,openingArrearsPeriod,cat,openingArrears[cat]);}
+    await refreshPublicSnapshotSafely();
     households=await getHouseholds();householdsLoadedAt=Date.now();$("#genericDialog").close();toast(editing?"Perubahan rumah tersimpan.":"Data rumah dan tunggakan awal tersimpan.");await render();
   });
 }
@@ -563,8 +571,8 @@ function parseCsvText(text){
   for(let i=0;i<text.length;i++){const ch=text[i],next=text[i+1];
     if(ch==='"'&&quoted&&next==='"'){cell+='"';i++;}
     else if(ch==='"')quoted=!quoted;
-    else if((ch===","||ch===";"||ch==="\\t")&&!quoted){row.push(cell);cell="";}
-    else if((ch==="\\n"||ch==="\\r")&&!quoted){if(ch==="\\r"&&next==="\\n")i++;row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);row=[];cell="";}
+    else if((ch===","||ch===";"||ch==="\t")&&!quoted){row.push(cell);cell="";}
+    else if((ch==="\n"||ch==="\r")&&!quoted){if(ch==="\r"&&next==="\n")i++;row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);row=[];cell="";}
     else cell+=ch;
   }
   row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);
@@ -574,7 +582,7 @@ function normalizeWaterImportRows(matrix){
   if(!matrix.length)return [];
   const headers=matrix[0].map(v=>String(v??"").trim().toLowerCase());
   const find=patterns=>headers.findIndex(h=>patterns.some(p=>h.includes(p)));
-  const ix={block:find(["blok","no. rumah"]),name:find(["nama kepala","nama"]),previous:find(["meter september","meteran september","meter awal"]),current:find(["meter oktober","meteran oktober","meter akhir"]),usage:find(["pemakaian","jml"]),amount:find(["tagihan oktober","tagihan air","nominal tagihan","tagihan (rp)"])};
+  const ix={block:find(["blok","no. rumah"]),name:find(["nama kepala","nama"]),previous:find(["meter awal","meter sebelumnya","meter september","meteran september"]),current:find(["meter akhir","meter sekarang","meter oktober","meteran oktober"]),usage:find(["pemakaian","jml"]),amount:find(["tagihan oktober","tagihan air","nominal tagihan","tagihan (rp)"])};
   if(ix.block<0)throw new Error("Kolom Blok tidak ditemukan. Gunakan file template impor Keuangan RT.");
   return matrix.slice(1).filter(r=>String(r[ix.block]??"").trim()).map(r=>{
     const num=i=>{if(i<0||r[i]===undefined||r[i]===null||String(r[i]).trim()==="")return null;const v=Number(String(r[i]).replace(/[^0-9,-]/g,"").replace(",", "."));return Number.isFinite(v)?v:null;};
@@ -592,10 +600,10 @@ async function renderWaterMeters(c){
     <div id="waterImportPanel" class="muted-note hidden">
       <form id="waterImportForm">
         <div class="form-grid">
-          <label class="field">Periode data<input type="month" name="period" value="2026-10" required></label>
+          <label class="field">Periode data<input type="month" name="period" value="${period}" required></label>
           <label class="field">Pilih file Excel / CSV<input type="file" id="waterImportFile" accept=".xlsx,.xls,.csv" required></label>
         </div>
-        <p class="muted tiny">Kolom yang dikenali: Blok, Nama Kepala Keluarga, Meter September, Meter Oktober, Pemakaian, dan Tagihan Oktober (Rp).</p>
+        <p class="muted tiny">Kolom yang dikenali: Blok, Nama Kepala Keluarga, Meter Awal, Meter Akhir, Pemakaian, dan Tagihan (Rp). Format lama dengan nama bulan juga didukung.</p>
         <div id="waterImportPreview"></div>
         <button class="btn primary" id="confirmWaterImport" type="submit" disabled>Impor ke Firebase</button>
         <button class="btn outline" id="cancelWaterImport" type="button">Batal</button>
@@ -605,7 +613,7 @@ async function renderWaterMeters(c){
       const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0,saved=readings[id];
       return `<div class="water-meter-line" data-house="${escapeHtml(id)}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
   <div class="water-meter-home"><b>${escapeHtml(h.block||"Rumah")}</b><small>Awal: ${previous.toLocaleString("id-ID")} m³</small></div>
-  <div class="water-meter-entry"><input class="meter-current" type="number" min="${Number(saved?.previousMeter??previous)}" step="0.001" inputmode="decimal" value="${saved?Number(saved.currentMeter):""}" placeholder="Angka meter akhir" ${saved?"disabled":""}><small class="meter-preview">${saved?"Tersimpan · "+saved.usage+" m³ · "+money(saved.totalAmount):"Isi angka meter akhir"}</small></div>
+  <div class="water-meter-entry"><input class="meter-current" type="number" min="${Number(saved?.previousMeter??previous)}" step="0.001" inputmode="decimal" value="${saved?Number(saved.currentMeter):""}" placeholder="Angka meter akhir" ${saved?"disabled":""}><small class="meter-preview">${saved?(saved.amountNeedsReview?"Meter tersimpan · nominal perlu dilengkapi":"Tersimpan · "+saved.usage+" m³ · "+money(saved.totalAmount)):"Isi angka meter akhir"}</small></div>
   <div class="water-meter-actions"><button class="btn ${saved?"outline":"primary"} small meter-save" type="button" ${saved?"data-edit-mode":"disabled"}>${saved?"Edit":"Simpan"}</button></div>
 </div>`;}).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}
   </div>`;
@@ -648,10 +656,9 @@ async function renderWaterMeters(c){
   });
 }
 async function renderCategory(c,cat){
-  const [bal,monthly,settings,depositRows]=await Promise.all([
+  const [bal,monthly,depositRows]=await Promise.all([
     read(`category_balances/${cat}`),
     read("financeSummaryByMonth"),
-    read("settings/billingRates"),
     read("deposits")
   ]);
   const [arrearsLedger]=await Promise.all([read("arrearsLedger")]);
@@ -660,7 +667,7 @@ async function renderCategory(c,cat){
   const monthDue={};
   for(const ledger of Object.values(arrearsLedger||{})){
     for(const [key,row] of Object.entries(ledger||{})){
-      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
+      if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
       const amount=Math.max(0,Number(row?.[cat])||0);
       if(amount>0)monthDue[key]=(monthDue[key]||0)+amount;
     }
@@ -668,8 +675,11 @@ async function renderCategory(c,cat){
   const due=Object.values(monthDue).reduce((sum,n)=>sum+n,0);
   const dueRows=Object.entries(monthDue).sort(([a],[b])=>a.localeCompare(b));
   const labels={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
-  const opening=Number(settings?.openingBalances?.[cat])||0;
   const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const yearPrefix=`${year}-`;
+  const yearIncome=Object.entries(monthly||{}).filter(([key])=>key.startsWith(yearPrefix)).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0),0);
+  const yearExpenses=Object.entries(monthly||{}).filter(([key])=>key.startsWith(yearPrefix)).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.expenses)||0),0);
+  const opening=(Number(balance.balance)||0)-yearIncome+yearExpenses;
   let running=opening,totalIn=0,totalOut=0;
   const rows=monthNames.map((name,index)=>{
     const key=`${year}-${String(index+1).padStart(2,"0")}`;
@@ -686,7 +696,7 @@ async function renderCategory(c,cat){
   const ledger=`<section class="panel monthly-ledger">
     <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Ringkasan pemasukan, pengeluaran, dan saldo berjalan per bulan</p></div><span class="pill">Januari–Desember</span></div>
     <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows}<tr class="ledger-total"><td><b>Akumulasi tahun ini</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
-    <p class="tiny muted ledger-note">Saldo awal Januari mengikuti saldo awal yang tercatat pada Pengaturan. Saldo akhir setiap bulan dihitung dari saldo awal + pemasukan − pengeluaran. Bulan mendatang akan bernilai Rp 0 sampai ada mutasi.</p>
+    <p class="tiny muted ledger-note">Saldo awal Januari dihitung dari saldo operasional saat ini dikurangi mutasi bersih tahun berjalan. Saldo akhir setiap bulan dihitung dari saldo awal + pemasukan − pengeluaran.</p>
   </section>`;
   c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit warga ditampilkan terpisah dan tidak dijumlahkan sebagai pemasukan operasional.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
@@ -716,8 +726,8 @@ async function renderExpenses(c){
     e.preventDefault(); const f=new FormData(e.currentTarget); const button=e.currentTarget.querySelector('button[type="submit"]');
     button.disabled=true; button.textContent="Menyimpan…";
     try{
-      await createExpense({category:f.get("category"),amount:parseRupiah(f.get("amount")),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
-      toast("Pengeluaran berhasil disimpan dan saldo kategori diperbarui.");
+      const saved=await createExpense({category:f.get("category"),amount:parseRupiah(f.get("amount")),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
+      toast(saved.summarySyncPending?"Pengeluaran tersimpan, tetapi ringkasan bulanan perlu diperiksa. Jangan catat ulang.":"Pengeluaran berhasil disimpan dan saldo kategori diperbarui.");
       e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); $("#expensePeriod").value=String(f.get("date")).slice(0,7); await drawHistory();
     }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
     finally{button.disabled=false;button.textContent="Simpan pengeluaran";}
@@ -726,7 +736,7 @@ async function renderExpenses(c){
 
 function renderMasterData(c){
   c.innerHTML=`<div class="grid two">
-    <section class="panel"><h3>Hapus data berdasarkan periode</h3><p class="muted">Menghapus tagihan, pembayaran, pengeluaran, transaksi, meter air, ringkasan, dan rincian tunggakan pada satu bulan. Data rumah, tarif, saldo kategori dan periode lain dipertahankan.</p>
+    <section class="panel"><h3>Hapus data berdasarkan periode</h3><p class="muted">Menghapus transaksi periode terpilih, mengembalikan mutasi deposit pada periode itu, menghitung ulang saldo kategori dari seluruh mutasi tersisa, memperbarui tunggakan, dan membatalkan rekap tahunan dari tahun tersebut ke atas. Data rumah, tarif, serta transaksi periode lain dipertahankan.</p>
       <label class="field">Pilih periode<input id="masterDeletePeriod" type="month" value="${monthKey()}"></label>
       <button class="btn danger" id="deletePeriodBtn" type="button">Hapus data periode</button>
     </section>
