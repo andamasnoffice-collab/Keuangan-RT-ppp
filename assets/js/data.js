@@ -1,5 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -136,12 +137,12 @@ export async function getMonthTransactions(period) {
   return await read(`transactionsByMonth/${period}`) || {};
 }
 const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const nextMonth = value => { const [y,m]=value.split("-").map(Number); const d=new Date(y,m,1); return String(d.getFullYear())+"-"+String(d.getMonth()+1).padStart(2,"0"); };
 const currentPeriodKey = () => { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`; };
 async function applyDepositToWaterBill(period,householdId,recordedBy){
-  const [bill,deposit,balance]=await Promise.all([
+  const [bill,deposit]=await Promise.all([
     read(`bills/${period}/${householdId}/air`),
-    read(`deposits/${householdId}/air`),
-    read("category_balances/air")
+    read(`deposits/${householdId}/air`)
   ]);
   if(!bill)return 0;
   const due=Math.max(0,Number(bill.amount??bill.totalAmount??bill.remaining)||0);
@@ -153,6 +154,7 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
   const paymentRef=push(root(`paymentsByMonth/${period}`));
   const txRef=push(root(`transactionsByMonth/${period}`));
   const ledgerRef=push(root("deposit_ledger"));
+  const journal=buildPaymentJournal({id:"payment_"+paymentRef.key,period,date:period+"-01",householdId,items:[{cat:"air",cash:0,depositUsed:use,applied:use,surplus:0}],createdAt:now});
   const updates={
     [`deposits/${householdId}/air`]:depositAfter,
     [`bills/${period}/${householdId}/air/paidAmount`]:paid+use,
@@ -162,11 +164,10 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
     [`arrearsLedger/${householdId}/${period}/air`]:remaining,
     [`deposit_ledger/${ledgerRef.key}`]:{householdId,category:"air",amount:-use,before:available,after:depositAfter,type:"deposit_auto_applied",date:period+"-01",period,paymentId:paymentRef.key,createdAt:now,recordedBy:recordedBy||null},
     [`paymentsByMonth/${period}/${paymentRef.key}`]:{id:paymentRef.key,type:"automatic_deposit_application",householdId,period,date:period+"-01",items:[{cat:"air",cash:0,depositUsed:use,applied:use,surplus:0,remaining}],cashReceived:0,depositUsed:use,appliedToBills:use,surplusDeposit:0,method:"deposit_auto",note:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
+    [`journal_entries/${journal.id}`]:journal,
     [`transactionsByMonth/${period}/${txRef.key}`]:{id:txRef.key,type:"payment",category:"air",amount:use,householdId,referenceId:paymentRef.key,date:period+"-01",description:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
-    "category_balances/air":{...(balance||{}),balance:(Number(balance?.balance)||0)+use,income:(Number(balance?.income)||0)+use,updatedAt:now}
   };
-  await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`,`category_balances/air`]);
-  await retryIdempotent(()=>applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"}));
+  await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`]);
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   return use;
 }
@@ -186,9 +187,11 @@ export async function createMonthlyBills(period, recordedBy) {
   }
   let primaryCommitted=false;
   try {
-    const [homes,settings,existing,deposits,balances,advancePayments]=await Promise.all([
-      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances"),read("fixed_advance_payments")
+    const [homes,settings,existing,deposits,balances,advancePayments,allArrears]=await Promise.all([
+      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances"),read("fixed_advance_payments"),read("arrearsLedger")
     ]);
+    const goLivePeriod=validPeriod(settings.goLivePeriod)?settings.goLivePeriod:period;
+    if(period<goLivePeriod) throw new Error("Periode tagihan tidak boleh sebelum titik awal pembukuan "+goLivePeriod+".");
     const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
     if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
     if(Object.keys(existing).length) throw new Error("Data tagihan periode ini sudah ada. Proses dihentikan agar tidak menimpa tagihan.");
@@ -196,6 +199,25 @@ export async function createMonthlyBills(period, recordedBy) {
     const now=Date.now();
     for(const [id,h] of active){
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
+      const arrearsStart=h.arrearsStartPeriod||{};
+      const legacyStart=h.openingArrearsPeriod||goLivePeriod;
+      const startFor=(cat)=>validPeriod(arrearsStart[cat])?arrearsStart[cat]:(h.openingArrearsRecorded&&validPeriod(legacyStart)&&Number(h.openingArrears?.[cat])>0?legacyStart:null);
+      for(const cat of ["kas","sampah"]){
+        const start=startFor(cat);
+        if(!start||start>=goLivePeriod)continue;
+        const rate=raw[cat];
+        if(rate<=0)continue;
+        for(let cursor=start;cursor<goLivePeriod&&cursor<period;cursor=nextMonth(cursor)){
+          const already=allArrears?.[id]?.[cursor]?.[cat];
+          if(already!==undefined&&already!==null)continue;
+          updates["bills/"+cursor+"/"+id+"/"+cat]={amount:rate,paidAmount:0,remaining:rate,status:"unpaid",openingArrears:true,createdAt:now};
+          updates["arrearsLedger/"+id+"/"+cursor+"/"+cat]=rate;
+          const openingJournal=buildOpeningJournal({id:"opening_arrears_"+id+"_"+cursor+"_"+cat,period:goLivePeriod,date:goLivePeriod+"-01",cash:{},receivables:{[cat]:rate},deposits:{},createdAt:now});
+          if(openingJournal)updates["journal_entries/"+openingJournal.id]=openingJournal;
+        }
+      }
+      const airOpening=Math.max(0,Number(h.openingArrears?.air)||0);
+      const applyAirOpening=airOpening>0&&!h.openingAirArrearsRecorded&&goLivePeriod<=period&&(allArrears?.[id]?.[goLivePeriod]?.air===undefined||allArrears?.[id]?.[goLivePeriod]?.air===null);
       const fixedAdvance=advancePayments?.[id]?.[period]||{};
       const kasBillAmount=fixedAdvance.kas?Math.max(0,Number(fixedAdvance.kas.rate)||Number(fixedAdvance.kas.amount)||raw.kas):raw.kas;
       const sampahBillAmount=fixedAdvance.sampah?Math.max(0,Number(fixedAdvance.sampah.rate)||Number(fixedAdvance.sampah.amount)||raw.sampah):raw.sampah;
@@ -206,6 +228,11 @@ export async function createMonthlyBills(period, recordedBy) {
         sampah:{amount:sampahBillAmount,paidAmount:sampahAdvance,remaining:Math.max(0,sampahBillAmount-sampahAdvance),status:sampahBillAmount===0||sampahAdvance>=sampahBillAmount?"paid":sampahAdvance>0?"partial":"unpaid",...(sampahAdvance?{advancePaymentId:fixedAdvance.sampah.paymentId,advancePaidAt:fixedAdvance.sampah.paidAt,rateLocked:sampahBillAmount}:{}),createdAt:now},
         air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
+      if(applyAirOpening){row.air.amount+=airOpening;row.air.remaining+=airOpening;row.air.openingArrears=airOpening;row.air.status="unpaid";updates["arrearsLedger/"+id+"/"+goLivePeriod+"/air"]=airOpening;updates["households/"+id+"/openingAirArrearsRecorded"]=true;}
+      if(applyAirOpening){
+        const openingJournal=buildOpeningJournal({id:"opening_arrears_"+id+"_"+goLivePeriod+"_air",period:goLivePeriod,date:goLivePeriod+"-01",cash:{},receivables:{air:airOpening},deposits:{},createdAt:now});
+        if(openingJournal)updates["journal_entries/"+openingJournal.id]=openingJournal;
+      }
       const applied={};
       for(const cat of ["air"]){
         const available=Math.max(0,Number(deposits?.[id]?.[cat])||0);
@@ -221,16 +248,19 @@ export async function createMonthlyBills(period, recordedBy) {
       }
       updates[`bills/${period}/${id}`]=row;
       updates[`arrearsLedger/${id}/${period}`]={kas:row.kas.remaining,sampah:row.sampah.remaining,air:row.air.remaining,updatedAt:now};
+      for(const cat of ["kas","sampah","air"]){
+        const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:cat==="air"?Math.max(0,row.air.amount-Number(row.air.openingArrears||0)):row[cat].amount,createdAt:now});
+        if(invoice)updates[`journal_entries/${invoice.id}`]=invoice;
+        const advanceAmount=cat==="kas"?kasAdvance:cat==="sampah"?sampahAdvance:0;
+        const advanceJournal=buildAdvanceApplicationJournal({id:"advance_apply_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:advanceAmount,createdAt:now});
+        if(advanceJournal)updates["journal_entries/"+advanceJournal.id]=advanceJournal;
+      }
       if(Object.keys(applied).length){
         const paymentRef=push(root(`paymentsByMonth/${period}`));
         const items=Object.entries(applied).map(([cat,amount])=>({cat,cash:0,depositUsed:amount,applied:amount,surplus:0,remaining:row[cat].remaining}));
         updates[`paymentsByMonth/${period}/${paymentRef.key}`]={id:paymentRef.key,type:"automatic_deposit_application",householdId:id,householdLabel:h.block||"",period,date:period+"-01",items,cashReceived:0,depositUsed:Object.values(applied).reduce((a,b)=>a+b,0),appliedToBills:Object.values(applied).reduce((a,b)=>a+b,0),surplusDeposit:0,method:"deposit_auto",note:"Pemotongan deposit otomatis saat tagihan dibuat",recordedBy:recordedBy||null,createdAt:now};
-      }
-    }
-    for(const cat of ["air"]){
-      if(depositSummary[cat]>0){
-        const balance=balances?.[cat]||{};
-        updates[`category_balances/${cat}`]={...balance,balance:(Number(balance.balance)||0)+depositSummary[cat],income:(Number(balance.income)||0)+depositSummary[cat],updatedAt:now};
+        const depositJournal=buildPaymentJournal({id:"payment_"+paymentRef.key,period,date:period+"-01",householdId:id,items,createdAt:now});
+        if(depositJournal)updates[`journal_entries/${depositJournal.id}`]=depositJournal;
       }
     }
     updates[`billing_runs/${period}/status`]="processing";
@@ -249,15 +279,6 @@ export async function createMonthlyBills(period, recordedBy) {
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining));
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"air",row.air.remaining));
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining));
-    }
-    for(const cat of ["air"]){
-      if(depositSummary[cat]>0){
-        const txRef=push(root(`transactionsByMonth/${period}`));
-        const summaryId=txRef.key;
-        const txRecord={id:summaryId,type:"payment",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga",recordedBy:recordedBy||null,createdAt:now};
-        await retryIdempotent(()=>set(txRef,txRecord));
-        await retryIdempotent(()=>applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"}));
-      }
     }
     await update(lockRef,{status:"completed",completedAt:Date.now()});
     await refreshPublicSnapshotSafely();
@@ -315,6 +336,8 @@ export async function importWaterStatement({period,rows,recordedBy}) {
           const air={amount,adminAmount:null,usage,previousMeter:previous,currentMeter:current,paidAmount:0,remaining:amount,status:amount>0?"unpaid":"paid",createdAt:now,source:"imported_statement"};
           updates[`bills/${period}/${house.id}/air`]=air;
           updates[`arrearsLedger/${house.id}/${period}/air`]=amount;
+          const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+house.id+"_air",period,date:period+"-01",householdId:house.id,category:"air",amount,createdAt:now});
+          if(invoice)updates["journal_entries/"+invoice.id]=invoice;
           charges++;
         }else needsReview++;
         if(hasMeters){
@@ -375,6 +398,8 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...baseBill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_corrected",period,householdId,previousMeter:previous,oldCurrentMeter:existing.currentMeter,newCurrentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
+  const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(bill?.amount)||0),createdAt:timestamp});
+  if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
@@ -410,6 +435,8 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
+  const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(baseBill.amount)||0),createdAt:timestamp});
+  if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
@@ -418,7 +445,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
 }
 
 export async function getBillingSettings() {
-  return await read("settings/billingRates") || { kasMonthly: 0, waterAdmin: 0, waterPerM3: 0, sampahMonthly: 0, updatedAt: null };
+  return await read("settings/billingRates") || { kasMonthly: 0, waterAdmin: 0, waterPerM3: 0, sampahMonthly: 0, goLivePeriod: new Date().toISOString().slice(0,7), updatedAt: null };
 }
 export async function saveBillingSettings(values) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
@@ -433,6 +460,7 @@ export async function saveBillingSettings(values) {
     waterAdmin: Math.max(0, Number(values.waterAdmin) || 0),
     waterPerM3: Math.max(0, Number(values.waterPerM3) || 0),
     sampahMonthly: Math.max(0, Number(values.sampahMonthly) || 0),
+    goLivePeriod: validPeriod(values.goLivePeriod) ? values.goLivePeriod : (previous.goLivePeriod || new Date().toISOString().slice(0,7)),
     openingBalances,
     updatedAt: Date.now()
   };
@@ -476,6 +504,8 @@ export async function createExpense({category, amount, date, description, proof,
   const record = {id:expenseRef.key, category, amount:value, date:date || new Date().toISOString().slice(0,10), description:String(description).trim(), proof:String(proof).trim(), recordedBy:recordedBy || null, createdAt:timestamp};
   const updates = {};
   updates[`expensesByMonth/${period}/${expenseRef.key}`] = record;
+  const journal=buildExpenseJournal({id:"expense_"+expenseRef.key,period,date:record.date,category,amount:value,description:record.description,createdAt:timestamp});
+  if(journal)updates[`journal_entries/${journal.id}`]=journal;
   updates[`transactionsByMonth/${period}/${txRef.key}`] = {...record, id:txRef.key, type:"expense", referenceId:expenseRef.key};
   updates[`category_balances/${category}`] = {...balance, balance:currentBalance-value, expense:(Number(balance.expense)||0)+value, updatedAt:timestamp};
   const logRef = push(root("audit_logs"));

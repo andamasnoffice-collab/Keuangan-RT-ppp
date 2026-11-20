@@ -1,6 +1,7 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+import { buildPaymentJournal } from "./accounting.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit8";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
@@ -66,7 +67,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
                   const paid=row.paid||row.billExists&&row.amount===0;
                   const blocked=!row.billExists;
                   const status=paid?"Sudah lunas":blocked?"Tagihan belum dibuat":row.future?"Pembayaran di muka · tarif dikunci":`Sisa tagihan: ${money(row.amount)}`;
-                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.future?money(row.advance?.rate||row.amount):row.billExists?money(row.amount):"—"}</strong></label>`;
+                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}" title="${esc(`${monthLabel(row.period)} · ${status}`)}"><input aria-label="${esc(`Bayar ${monthLabel(row.period)}`)}" type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${new Intl.DateTimeFormat("id-ID",{month:"short"}).format(new Date(Number(row.period.slice(0,4)),Number(row.period.slice(5,7))-1,1))}</b><small>${row.period.slice(0,4)}</small></span></label>`;
                 }).join("")}
               </div>
               <small class="muted fixed-help">Wajib berurutan. Centang bulan pertama yang belum lunas, lalu bulan berikutnya. Tidak bisa melompati bulan.</small>
@@ -184,7 +185,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:cat,amount:currentRemaining,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
               summaryDeltas.push({id:txRef.key,category:cat,amount:currentRemaining,description:desc});
               totalApplied+=currentRemaining;
-              items.push({cat,period:item.period,cash:currentRemaining,depositUsed:0,applied:currentRemaining,surplus:0,remaining:0});
+              items.push({cat,period:item.period,cash:currentRemaining,depositUsed:0,applied:currentRemaining,surplus:0,remaining:0,advance:!!item.future});
             }
           }
           for(const cat of fixedCategories){
@@ -221,19 +222,26 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             }
             const airAppliedTotal=airApplied+airDepositUsed;
             if(airAppliedTotal>0){
-              const balance=await read("category_balances/air")||{};
-              updates["category_balances/air"]={...balance,balance:num(balance.balance)+airAppliedTotal,income:num(balance.income)+airAppliedTotal,updatedAt:timestamp};
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc=airDepositUsed&&airApplied?"Pembayaran Air (tunai + deposit)":airDepositUsed?"Pelunasan Air dari deposit":"Pembayaran Air";
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:"air",amount:airAppliedTotal,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-              summaryDeltas.push({id:txRef.key,category:"air",amount:airAppliedTotal,description:desc});
               totalApplied+=airAppliedTotal;
+            }
+            if(airCash>0){
+              const balance=await read("category_balances/air")||{};
+              updates["category_balances/air"]={...balance,balance:num(balance.balance)+airCash,income:num(balance.income)+airCash,updatedAt:timestamp};
+              const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
+              const desc="Penerimaan kas Air";
+              updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:"air",amount:airCash,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+              summaryDeltas.push({id:txRef.key,category:"air",amount:airCash,description:desc});
             }
             totalDepositUsed+=airDepositUsed;totalSurplus+=airSurplus;
             items.push({cat:"air",cash:airCash,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
           }
           const totalCash=kasTotal+sampahTotal+airCash;
           updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:paymentPeriod,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          const journal=buildPaymentJournal({id:"payment_"+paymentRef.key,period:paymentPeriod,date,householdId:id,items,createdAt:timestamp});
+          if(journal)updates[`journal_entries/${journal.id}`]=journal;
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:paymentPeriod,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const verifyPaths=[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`];

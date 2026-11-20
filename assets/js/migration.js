@@ -1,4 +1,5 @@
 import { db } from "./firebase.js";
+import { buildOpeningJournal } from "./accounting.js";
 import { ref, get, update, runTransaction, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
 const $=s=>document.querySelector(s);
@@ -160,6 +161,12 @@ async function saveMigration(){
       summary.total=summary.kas+summary.air+summary.sampah;
       updates[`arrearsSummary/${id}`]=summary;
     }
+    const openingCash={kas:0,air:0,sampah:0},openingReceivables={kas:0,air:0,sampah:0},openingDeposits={kas:0,air:0,sampah:0};
+    for(const x of parsed.cash)openingCash[x.category]+=x.amount;
+    for(const x of parsed.arrears)openingReceivables[x.category]+=x.amount;
+    for(const x of parsed.deposits)for(const cat of categories)openingDeposits[cat]+=x.values[cat];
+    const openingJournal=buildOpeningJournal({id:"opening_"+batchId,period:"2026-10",date:"2026-10-31",cash:openingCash,receivables:openingReceivables,deposits:openingDeposits,createdAt:now});
+    if(openingJournal)updates["journal_entries/"+openingJournal.id]=openingJournal;
     const record={id:batchId,status:"completed",openingDate:"2026-10-31",goLivePeriod:"2026-11",source:"Buku manual",arrears:parsed.arrears,deposits:parsed.deposits,cash:parsed.cash,recordedBy,createdAt:now};
     updates[`opening_migration_records/${batchId}`]=record;
     updates["opening_migrations/2026-10"]={status:"completed",batchId,completedAt:now,recordedBy,counts:parsed.counts};

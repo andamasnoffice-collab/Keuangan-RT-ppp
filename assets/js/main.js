@@ -1,10 +1,11 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
-import { renderPaymentPage } from "./payments.js?v=20261120-audit8";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-accounting1";
+import { renderPaymentPage } from "./payments.js?v=20261120-accounting1";
 import { renderWhatsAppPage } from "./whatsapp.js";
-import { renderOpeningMigration } from "./migration.js?v=20261120-migration2";
+import { renderOpeningMigration } from "./migration.js?v=20261120-accounting1";
+import { cashFlow, trialBalance, summarizeLedger } from "./accounting.js?v=20261120-accounting1";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
@@ -168,7 +169,9 @@ async function renderSettings(c){
         ${field("Iuran sampah per rumah / bulan","sampahMonthly",settings.sampahMonthly,"Iuran sampah tetap setiap bulan.")}
         ${field("Administrasi air per rumah / bulan","waterAdmin",settings.waterAdmin,"Beban administrasi tetap, di luar pemakaian air.")}
         ${field("Tarif pemakaian air per m³","waterPerM3",settings.waterPerM3,"Dikalikan selisih meter akhir dan meter awal.")}
-        <div class="full-row"><h4>Saldo awal operasional</h4><p class="muted tiny">Isi saldo awal kas, air, dan sampah. Perubahan saldo awal berikutnya menyesuaikan saldo berjalan berdasarkan selisihnya.</p></div>
+        <div class="full-row"><h4>Titik awal pembukuan digital</h4><p class="muted tiny">Bulan pertama aplikasi mulai menerbitkan tagihan, mencatat penerimaan, dan menyusun laporan.</p></div>
+        <label class="field">Bulan mulai aplikasi<input name="goLivePeriod" type="month" value="${settings.goLivePeriod||monthKey()}" required><small class="muted tiny">Menjadi patokan awal pembukuan untuk semua rumah.</small></label>
+        <div class="full-row"><h4>Saldo awal operasional</h4><p class="muted tiny">Isi saldo uang nyata. Deposit dan piutang warga dicatat terpisah.</p></div>
         ${field("Saldo awal Kas RT","openingKas",settings.openingBalances?.kas,"Saldo awal kas RT.")}
         ${field("Saldo awal Kas Air","openingAir",settings.openingBalances?.air,"Saldo awal khusus pengelolaan air.")}
         ${field("Saldo awal Sampah","openingSampah",settings.openingBalances?.sampah,"Saldo awal dana sampah.")}
@@ -182,7 +185,7 @@ async function renderSettings(c){
   bindRupiahInputs($("#billingSettingsForm"));
   $("#billingSettingsForm").addEventListener("submit",async e=>{
     e.preventDefault(); const f=new FormData(e.currentTarget);
-    const values=Object.fromEntries(["kasMonthly","sampahMonthly","waterAdmin","waterPerM3","openingKas","openingAir","openingSampah"].map(k=>[k,parseRupiah(f.get(k))]));
+    const values=Object.fromEntries(["kasMonthly","sampahMonthly","waterAdmin","waterPerM3","openingKas","openingAir","openingSampah"].map(k=>[k,parseRupiah(f.get(k))])); values.goLivePeriod=String(f.get("goLivePeriod")||"");
     const button=e.currentTarget.querySelector('button[type="submit"]'); button.disabled=true; button.textContent="Menyimpan…";
     try{const saved=await saveBillingSettings(values); $("#settingsSavedAt").textContent=`Tersimpan: ${new Date(saved.updatedAt).toLocaleString("id-ID")}`; toast("Pengaturan tarif berhasil disimpan ke Firebase.");}
     catch(err){toast("Gagal menyimpan: "+err.message);}
@@ -791,13 +794,14 @@ async function renderTransactions(c){
 }
 
 async function renderReports(c){
-  const [sums,archives]=await Promise.all([read("category_balances"),read("annual_summaries")]);
+  const [sums,archives,journals,arrears,deposits]=await Promise.all([read("category_balances"),read("annual_summaries"),read("journal_entries"),read("arrearsLedger"),read("deposits")]);
   const currentYear=new Date().getFullYear();
   const years=[...new Set([...Object.keys(archives||{}).map(Number),currentYear])].filter(y=>Number.isInteger(y)&&y>=2000&&y<=currentYear).sort((a,b)=>b-a);
   const options=years.map(y=>`<option value="${y}">${y}</option>`).join("");
   c.innerHTML=`<div class="section-head"><div><h3>Laporan Tahunan</h3><p class="tiny muted">Rekap ringkas per tahun agar laporan historis tidak perlu membaca seluruh transaksi.</p></div><span class="pill">Admin</span></div>
     <div class="panel"><div class="toolbar"><label class="field">Pilih tahun<select id="annualReportYear">${options}</select></label><button class="btn primary" id="buildAnnualReportBtn">Buat / Perbarui Rekap Tahun</button></div><p class="tiny muted" id="annualReportStatus">Rekap tahunan disimpan terpisah. Data transaksi asli tetap dipertahankan.</p></div>
     <div id="annualReportContent" class="panel" style="margin-top:14px">Memuat rekap…</div>
+    <div id="doubleEntryReport" class="panel" style="margin-top:14px">Memuat laporan jurnal…</div>
     <div class="muted-note" style="margin-top:12px">Rekap tahunan menyimpan total pemasukan dan pengeluaran per kategori, saldo operasional hasil perhitungan, serta posisi tunggakan dan deposit saat rekap dibuat. Untuk tahun yang sudah lewat, gunakan rekap tersimpan. Jika ada koreksi transaksi lama, buat ulang rekap tahun terkait.</div>`;
   const draw=async()=>{
     const year=$("#annualReportYear").value;
@@ -818,5 +822,19 @@ async function renderReports(c){
     finally{button.disabled=false;button.textContent="Buat / Perbarui Rekap Tahun";}
   });
   await draw();
+  const accountingHost=$("#doubleEntryReport");
+  const drawAccounting=()=>{
+    const year=$("#annualReportYear").value,flow=cashFlow(journals||{},{from:year+"-01",to:year+"-12"}),tb=trialBalance(journals||{}),ledger=summarizeLedger(journals||{});
+    const accountBalance=key=>Number(ledger.accounts[key]?.balance)||0;
+    const receivable=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,accountBalance("asset.receivable."+cat)),0);
+    const depositLiability=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,-accountBalance("liability.deposit."+cat)),0);
+    accountingHost.innerHTML=`<div class="section-head"><div><h3>Pembukuan Akrual · Jurnal Debit/Kredit</h3><p class="tiny muted">Tagihan bukan penerimaan kas. Laporan dihitung dari jurnal yang diposting.</p></div><span class="pill ${tb.balanced?"success":"danger"}">${tb.balanced?"Seimbang":"Tidak seimbang"}</span></div>
+      <div class="grid stats"><div class="stat"><div class="label">Kas masuk ${year}</div><div class="value">${money(flow.inflow)}</div></div><div class="stat"><div class="label">Kas keluar ${year}</div><div class="value">${money(flow.outflow)}</div></div><div class="stat"><div class="label">Piutang</div><div class="value">${money(receivable)}</div></div><div class="stat"><div class="label">Utang deposit</div><div class="value">${money(depositLiability)}</div></div></div>
+      <div class="summary-box" style="margin:14px 0"><div class="summary-line"><span>Arus kas bersih ${year}</span><b>${money(flow.net)}</b></div><div class="summary-line"><span>Total debit</span><b>${money(tb.totalDebit)}</b></div><div class="summary-line"><span>Total kredit</span><b>${money(tb.totalCredit)}</b></div></div>
+      <h4>Neraca saldo per akun</h4><div class="table-wrap"><table><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th><th>Saldo (D-K)</th></tr></thead><tbody>${tb.rows.map(x=>`<tr><td>${x.account}</td><td class="amount">${money(x.debit)}</td><td class="amount">${money(x.credit)}</td><td class="amount">${money(x.balance)}</td></tr>`).join("")||'<tr><td colspan="4">Belum ada jurnal.</td></tr>'}</tbody><tfoot><tr><th>Total</th><th>${money(tb.totalDebit)}</th><th>${money(tb.totalCredit)}</th><th>—</th></tr></tfoot></table></div>
+      <p class="tiny muted" style="margin-top:12px">Piutang dan deposit dihitung dari jurnal terposting. Pastikan saldo awal dan koreksi meter juga telah dijurnal agar laporan lengkap.</p>`;
+  };
+  drawAccounting();
+  $("#annualReportYear").addEventListener("change",drawAccounting);
 }
 render();
