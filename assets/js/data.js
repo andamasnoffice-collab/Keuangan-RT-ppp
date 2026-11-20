@@ -564,7 +564,7 @@ export async function saveBillingSettings(values) {
   for(const cat of ["kas","air","sampah"]){
     const oldOpening=Number(previous.openingBalances?.[cat])||0,nextOpening=openingBalances[cat];
     const current=allBalances?.[cat]||{};
-    updates[`category_balances/${cat}]={
+    updates[`category_balances/${cat}`]={
       ...current,openingBalance:nextOpening,
       balance:(Number(current.balance)||0)+(nextOpening-oldOpening),updatedAt:Date.now()
     };
