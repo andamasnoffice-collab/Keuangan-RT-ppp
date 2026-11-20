@@ -739,7 +739,7 @@ export async function refreshPublicSnapshotSafely() {
   catch(error) { console.error("Sinkronisasi tampilan publik tertunda:",error); return false; }
 }
 
-const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
+const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","receivable_waivers","billing_runs","water_import_runs","public_views","settings"];
 export async function deleteMasterData({mode,period,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
   const stamp=Date.now(),updates={};
