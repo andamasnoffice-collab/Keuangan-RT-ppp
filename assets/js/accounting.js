@@ -5,7 +5,8 @@
 export const ACCOUNT = Object.freeze({
   CASH_KAS:"asset.cash.kas", CASH_AIR:"asset.cash.air", CASH_SAMPAH:"asset.cash.sampah",
   AR_KAS:"asset.receivable.kas", AR_AIR:"asset.receivable.air", AR_SAMPAH:"asset.receivable.sampah",
-  DEPOSIT_KAS:"liability.deposit.kas", DEPOSIT_AIR:"liability.deposit.air", DEPOSIT_SAMPAH:"liability.deposit.sampah",\n  ADVANCE_KAS:"liability.advance.kas", ADVANCE_AIR:"liability.advance.air", ADVANCE_SAMPAH:"liability.advance.sampah",
+  DEPOSIT_KAS:"liability.deposit.kas", DEPOSIT_AIR:"liability.deposit.air", DEPOSIT_SAMPAH:"liability.deposit.sampah",
+  ADVANCE_KAS:"liability.advance.kas", ADVANCE_AIR:"liability.advance.air", ADVANCE_SAMPAH:"liability.advance.sampah",
   REVENUE_KAS:"revenue.kas", REVENUE_AIR:"revenue.air", REVENUE_SAMPAH:"revenue.sampah",
   EXPENSE_KAS:"expense.kas", EXPENSE_AIR:"expense.air", EXPENSE_SAMPAH:"expense.sampah",
   OPENING_EQUITY:"equity.opening_balance"
