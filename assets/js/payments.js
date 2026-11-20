@@ -1,6 +1,6 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit7";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit7";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
@@ -26,25 +26,30 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
     if(!id){box.innerHTML='<div class="empty">Pilih rumah untuk menampilkan tagihan.</div>';return;}
     box.innerHTML='<div class="empty">Mengambil tagihan dan deposit…</div>';
     try{
-      const [ledger,dep]=await Promise.all([getHouseholdArrearLedger(id),read(`deposits/${id}`)]);
+      const [ledger,dep,settings,advances]=await Promise.all([getHouseholdArrearLedger(id),read("deposits/"+id),getBillingSettings(),read("fixed_advance_payments/"+id)]);
       const periods=Object.keys(ledger||{}).filter(p=>/^\d{4}-(0[1-9]|1[0-2])$/.test(p)).sort();
       const periodBills=periods.map(period=>({period,categories:ledger[period]||{}}));
       const rowsFor=cat=>periodBills.filter(row=>num(row.categories?.[cat])>0);
-      const ledgerYears=periods.map(p=>Number(p.slice(0,4)));
-      const currentYear=new Date().getFullYear();
-      const firstYear=ledgerYears.length?Math.min(currentYear,...ledgerYears):currentYear;
-      const lastYear=ledgerYears.length?Math.max(currentYear,...ledgerYears):currentYear;
+      const now=new Date(),currentPeriod=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+      const firstPeriod=periods.length&&periods[0]<currentPeriod?periods[0]:currentPeriod;
+      const startParts=firstPeriod.split("-").map(Number);
+      const endDate=new Date(now.getFullYear(),now.getMonth()+12,1);
+      const endPeriod=endDate.getFullYear()+"-"+String(endDate.getMonth()+1).padStart(2,"0");
       const displayPeriods=[];
-      for(let year=firstYear;year<=lastYear;year++){
-        for(let month=1;month<=12;month++){
-          const period=`${year}-${String(month).padStart(2,"0")}`;
-          displayPeriods.push({period,categories:ledger[period]||{},billExists:!!ledger[period]});
-        }
+      for(let y=startParts[0];y<=endDate.getFullYear();y++)for(let m=1;m<=12;m++){
+        const period=y+"-"+String(m).padStart(2,"0");
+        if(period<firstPeriod||period>endPeriod)continue;
+        displayPeriods.push({period,categories:ledger[period]||{}});
       }
-      const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,displayPeriods.map(row=>({
-        ...row,billExists:row.billExists&&Object.prototype.hasOwnProperty.call(row.categories,cat),
-        amount:num(row.categories?.[cat])
-      }))]));
+      const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,displayPeriods.map(row=>{
+        const hasBill=Object.prototype.hasOwnProperty.call(row.categories,cat);
+        const future=row.period>currentPeriod;
+        const advance=advances?.[row.period]?.[cat]||null;
+        const currentRate=Number(cat==="kas"?settings.kasMonthly:settings.sampahMonthly)||0;
+        const lockedRate=Number(advance?.rate)||currentRate;
+        const amount=hasBill?num(row.categories[cat]):future?Math.max(0,lockedRate-num(advance?.amount)):0;
+        return {...row,billExists:hasBill||future,sequence:hasBill||future||row.period<=currentPeriod,future,advance,amount,paid:hasBill?num(row.categories[cat])===0:!!advance&&num(advance.amount)>=lockedRate};
+      })]));
       const airRows=rowsFor("air");
       const airGross=airRows.reduce((sum,row)=>sum+num(row.categories.air),0);
       const airDeposit=num(dep?.air);
