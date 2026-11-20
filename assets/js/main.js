@@ -691,18 +691,24 @@ async function renderWaterMeters(c){
   });
 }
 async function renderCategory(c,cat){
-  const [bal,monthly,depositRows]=await Promise.all([
+  const [bal,monthly,depositRows,settings,arrearsLedger]=await Promise.all([
     read(`category_balances/${cat}`),
     read("financeSummaryByMonth"),
-    read("deposits")
+    read("deposits"),
+    getBillingSettings(),
+    read("arrearsLedger")
   ]);
-  const [arrearsLedger]=await Promise.all([read("arrearsLedger")]);
   const depositTotal=Object.values(depositRows||{}).reduce((sum,cats)=>sum+(Number(cats?.[cat])||0),0);
   const balance={...(bal||{}),deposit:depositTotal},period=monthKey(),year=Number(period.slice(0,4));
+  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings.goLivePeriod||"")?settings.goLivePeriod:`${year}-01`;
+  const yearStart=`${year}-01`;
+  const firstPeriod=goLive>yearStart?goLive:yearStart;
+  const firstMonth=Number(firstPeriod.slice(5,7));
+  const lastMonth=Number(period.slice(5,7));
   const monthDue={};
   for(const ledger of Object.values(arrearsLedger||{})){
     for(const [key,row] of Object.entries(ledger||{})){
-      if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
+      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period||key<goLive)continue;
       const amount=Math.max(0,Number(row?.[cat])||0);
       if(amount>0)monthDue[key]=(monthDue[key]||0)+amount;
     }
@@ -711,27 +717,27 @@ async function renderCategory(c,cat){
   const dueRows=Object.entries(monthDue).sort(([a],[b])=>a.localeCompare(b));
   const labels={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
   const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-  const yearPrefix=`${year}-`;
-  const yearIncome=Object.entries(monthly||{}).filter(([key])=>key.startsWith(yearPrefix)).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0),0);
-  const yearExpenses=Object.entries(monthly||{}).filter(([key])=>key.startsWith(yearPrefix)).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.expenses)||0),0);
-  const opening=(Number(balance.balance)||0)-yearIncome+yearExpenses;
+  const activeKeys=Array.from({length:Math.max(0,lastMonth-firstMonth+1)},(_,i)=>`${year}-${String(firstMonth+i).padStart(2,"0")}`);
+  const activeIncome=activeKeys.reduce((sum,key)=>sum+(Number(monthly?.[key]?.byCategory?.[cat]?.income)||0),0);
+  const activeExpenses=activeKeys.reduce((sum,key)=>sum+(Number(monthly?.[key]?.byCategory?.[cat]?.expenses)||0),0);
+  const opening=(Number(balance.balance)||0)-activeIncome+activeExpenses;
   let running=opening,totalIn=0,totalOut=0;
-  const rows=monthNames.map((name,index)=>{
-    const key=`${year}-${String(index+1).padStart(2,"0")}`;
+  const rows=activeKeys.map(key=>{
+    const monthIndex=Number(key.slice(5,7))-1,name=monthNames[monthIndex];
     const data=monthly?.[key]?.byCategory?.[cat]||{};
     const income=Math.max(0,Number(data.income)||0),expense=Math.max(0,Number(data.expenses)||0);
     const start=running,end=start+income-expense;
     running=end;totalIn+=income;totalOut+=expense;
-    const future=key>period;
-    return `<tr class="${future?"month-future":""}"><td><b>${name}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount">${money(end)}</td></tr>`;
+    return `<tr><td><b>${name}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount">${money(end)}</td></tr>`;
   }).join("");
+  const ledgerRows=rows||'<tr><td colspan="5" class="empty">Belum ada periode pembukuan aktif pada tahun ini.</td></tr>';
   const stats=`<div class="grid stats">${card("Saldo operasional saat ini",money(balance.balance))}${card("Pemasukan tercatat",money(balance.income))}${card("Pengeluaran tercatat",money(balance.expense))}${card("Deposit warga",money(balance.deposit))}</div>
-  <div class="section-head"><div><h3>Total Tunggakan sampai ${period}</h3><p class="tiny muted">Akumulasi sisa kewajiban ${labels[cat]} dari seluruh periode sampai bulan berjalan</p></div><span class="pill warning">${money(due)}</span></div>
-  <div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Periode tunggakan</th><th>Sisa belum dibayar</th></tr></thead><tbody>${dueRows.map(([key,amount])=>`<tr><td>${key}</td><td class="amount">${money(amount)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">Tidak ada tunggakan sampai bulan berjalan.</td></tr>'}</tbody><tfoot><tr><th>Total sampai ${period}</th><th class="amount">${money(due)}</th></tr></tfoot></table></div>`;
+  <div class="section-head"><div><h3>Total Tunggakan sampai ${period}</h3><p class="tiny muted">Akumulasi sisa kewajiban ${labels[cat]} sejak awal pembukuan digital</p></div><span class="pill warning">${money(due)}</span></div>
+  <div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Periode tunggakan</th><th>Sisa belum dibayar</th></tr></thead><tbody>${dueRows.map(([key,amount])=>`<tr><td>${key}</td><td class="amount">${money(amount)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">Tidak ada tunggakan sejak awal pembukuan.</td></tr>'}</tbody><tfoot><tr><th>Total sampai ${period}</th><th class="amount">${money(due)}</th></tr></tfoot></table></div>`;
   const ledger=`<section class="panel monthly-ledger">
-    <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Ringkasan pemasukan, pengeluaran, dan saldo berjalan per bulan</p></div><span class="pill">Januari–Desember</span></div>
-    <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows}<tr class="ledger-total"><td><b>Akumulasi tahun ini</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
-    <p class="tiny muted ledger-note">Saldo awal Januari dihitung dari saldo operasional saat ini dikurangi mutasi bersih tahun berjalan. Saldo akhir setiap bulan dihitung dari saldo awal + pemasukan − pengeluaran.</p>
+    <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Periode aktif: ${firstPeriod} sampai ${period}. Saldo akhir berjalan ke bulan berikutnya.</p></div><span class="pill">${firstPeriod} – ${period}</span></div>
+    <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${ledgerRows}<tr class="ledger-total"><td><b>Akumulasi periode aktif</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
+    <p class="tiny muted ledger-note">Periode sebelum bulan mulai aplikasi tidak ditampilkan sebagai mutasi digital. Saldo awal diambil mundur dari saldo operasional saat ini dikurangi pemasukan dan ditambah pengeluaran sejak periode aktif.</p>
   </section>`;
   c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit warga ditampilkan terpisah dan tidak dijumlahkan sebagai pemasukan operasional.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
