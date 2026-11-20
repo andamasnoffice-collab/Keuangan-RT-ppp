@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory } from "./data.js?v=20261120-billing-sync1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261120-billing-sync1";
 import { renderPaymentPage } from "./payments.js?v=20261120-billing-sync1";
 import { renderWhatsAppPage } from "./whatsapp.js";
 import { renderOpeningMigration } from "./migration.js?v=20261120-billing-sync1";
@@ -384,9 +384,37 @@ function renderHouseholds(c){
   const draw=filter=>{$("#houseRows").innerHTML=rows.filter(h=>`${h.block} ${h.address} ${h.headName}`.toLowerCase().includes(filter.toLowerCase())).map(h=>houseRow(h)).join("")||'<tr><td colspan="6" class="empty">Tidak ada rumah yang cocok.</td></tr>';};
   $("#houseSearch").addEventListener("input",e=>draw(e.target.value));
   $("#addHouse").addEventListener("click",()=>houseDialog());
-  $("#houseRows").addEventListener("click",e=>{const b=e.target.closest("[data-edit-house]");if(!b)return;const h=rows.find(x=>x.id===b.dataset.editHouse);if(h)houseDialog(h);});
+  $("#houseRows").addEventListener("click",e=>{const waive=e.target.closest("[data-waive-house]");if(waive){const h=rows.find(x=>x.id===waive.dataset.waiveHouse);if(h)houseWaiverDialog(h);return;}const b=e.target.closest("[data-edit-house]");if(!b)return;const h=rows.find(x=>x.id===b.dataset.editHouse);if(h)houseDialog(h);});
   $("#downloadHouseTemplate").addEventListener("click",downloadHouseholdTemplate);
   $("#houseImportFile").addEventListener("change",handleHouseholdImport);
+}
+function houseWaiverDialog(house) {
+  const current=monthKey();
+  $("#dialogContent").innerHTML=`<h3>Pemutihan tagihan · ${escapeHtml(house.block||"Rumah")}</h3>
+    <p class="muted tiny">Pilih bulan dan kategori yang diputihkan. Nominal sisa akan dihapus dari tunggakan, tanpa penerimaan pembayaran atau pengurangan saldo kas.</p>
+    <form id="houseWaiverForm"><div class="form-grid">
+      <label class="field">Bulan tagihan<input name="period" type="month" max="${current}" value="${current}" required></label>
+      <label class="field full-row">Kategori yang diputihkan</label>
+      <label class="field"><span><input type="checkbox" name="category" value="kas"> Kas RT</span></label>
+      <label class="field"><span><input type="checkbox" name="category" value="air"> Air</span></label>
+      <label class="field"><span><input type="checkbox" name="category" value="sampah"> Sampah</span></label>
+      <label class="field full-row">Alasan pemutihan<input name="reason" maxlength="180" placeholder="Contoh: rumah kosong / kebijakan pengurus" required></label>
+    </div><div class="muted-note">Pemutihan hanya berlaku untuk kategori dan bulan yang dipilih. Pembayaran yang sudah masuk tetap tercatat; hanya sisa tagihan yang diputihkan.</div><button class="btn primary full" type="submit">Terapkan pemutihan</button></form>`;
+  $("#genericDialog").showModal();
+  $("#houseWaiverForm").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const form=e.currentTarget,values=new FormData(form),period=String(values.get("period")||""),reason=String(values.get("reason")||"").trim(),categories=values.getAll("category");
+    if(!categories.length){toast("Pilih minimal satu kategori.");return;}
+    if(!confirm(`Putihkan ${categories.join(", ")} untuk ${house.block} periode ${period}? Sisa kewajiban terpilih akan menjadi Rp 0 dan tidak dapat ditagih kembali.`))return;
+    const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Memproses…";
+    try{
+      const results=[];
+      for(const category of categories)results.push(await waiveHouseholdBill({householdId:house.id,period,category,reason,recordedBy:currentUser?.uid}));
+      $("#genericDialog").close();
+      toast(`Pemutihan berhasil: ${results.map(x=>x.category+" "+money(x.amount)).join(" · ")}.`);
+      await render();
+    }catch(err){toast("Pemutihan gagal: "+err.message);button.disabled=false;button.textContent="Terapkan pemutihan";}
+  });
 }
 const HOUSE_IMPORT_HEADERS=["Blok / No Rumah","Nama Kepala Keluarga","Alamat Lengkap","Nomor HP","Nomor WhatsApp","Status (active/empty/rented)","Meter Air Awal (m3)","Anggota 1 - Nama","Anggota 1 - Hubungan","Anggota 2 - Nama","Anggota 2 - Hubungan","Anggota 3 - Nama","Anggota 3 - Hubungan","Anggota 4 - Nama","Anggota 4 - Hubungan","Anggota 5 - Nama","Anggota 5 - Hubungan","Periode Tunggakan Awal (YYYY-MM)","Tunggakan Awal Kas RT (Rp)","Tunggakan Awal Air (Rp)","Tunggakan Awal Sampah (Rp)"];
 function downloadHouseholdTemplate(){
@@ -485,7 +513,7 @@ async function handleHouseholdImport(event){
   }catch(err){$("#houseImportPreview").innerHTML='<div class="muted-note">'+escapeHtml(err.message)+'</div>';toast("Impor gagal dibaca: "+err.message);}
   finally{input.disabled=false;}
 }
-function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button></td></tr>`;}
+function houseRow(h){return `<tr><td><b>${escapeHtml(h.block||"-")}</b></td><td>${escapeHtml(h.headName||"-")}</td><td>${escapeHtml(h.address||"-")}</td><td>${Object.keys(h.members||{}).length}</td><td><span class="pill ${h.status==="active"?"success":"warning"}">${escapeHtml(h.status||"active")}</span></td><td><div class="toolbar"><button class="btn small outline" type="button" data-edit-house="${escapeHtml(h.id)}">Edit</button><button class="btn small secondary" type="button" data-waive-house="${escapeHtml(h.id)}">Pemutihan</button></div></td></tr>`;}
 async function renderHouseholdLedger(c){
   const homes=Object.entries(households||{}).map(([id,h])=>({id,...h})).sort((a,b)=>compareBlocks(a.block,b.block));
   c.innerHTML=`<section class="panel household-ledger-page"><div class="section-head" style="margin-top:0"><div><h3>Mutasi keuangan per warga</h3><p class="tiny muted">Pembayaran tunai, deposit masuk, dan deposit yang dipakai ditampilkan terpisah.</p></div><span class="pill">Data Firebase</span></div><div class="house-ledger-filter"><label class="field">Pilih rumah<select id="houseLedgerHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${escapeHtml(h.id)}">${escapeHtml(h.block||"-")} · ${escapeHtml(h.headName||"")}</option>`).join("")}</select></label><label class="field">Tahun mutasi<input id="houseLedgerYear" type="number" min="2000" max="2100" value="${new Date().getFullYear()}"></label><button id="loadHouseLedger" class="btn primary">Tampilkan</button></div><div id="houseLedgerContent"><div class="empty">Pilih rumah untuk melihat mutasi keuangannya.</div></div><p class="tiny muted">Deposit otomatis mengurangi tagihan kategori yang sama. Pembayaran dari deposit bukan uang tunai baru dan tidak dihitung sebagai pemasukan kas dua kali.</p></section>`;
