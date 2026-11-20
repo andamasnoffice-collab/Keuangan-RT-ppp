@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261120-waiver1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261120-golive2";
 import { renderPaymentPage } from "./payments.js?v=20261120-waiver1";
 import { renderWhatsAppPage } from "./whatsapp.js";
 import { renderOpeningMigration } from "./migration.js?v=20261120-waiver1";
@@ -862,7 +862,7 @@ async function renderReports(c){
   await draw();
   const accountingHost=$("#doubleEntryReport");
   const drawAccounting=()=>{
-    const year=$("#annualReportYear").value,flow=cashFlow(journals||{},{from:year+"-01",to:year+"-12"}),tb=trialBalance(journals||{}),ledger=summarizeLedger(journals||{});
+    const year=$("#annualReportYear").value,flow=cashFlow(journals||{},{from:(archives?.[year]?.periodStart||year+"-01"),to:(archives?.[year]?.periodEnd||year+"-12")}),tb=trialBalance(journals||{}),ledger=summarizeLedger(journals||{});
     const accountBalance=key=>Number(ledger.accounts[key]?.balance)||0;
     const receivable=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,accountBalance("asset.receivable."+cat)),0);
     const depositLiability=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,-accountBalance("liability.deposit."+cat)),0);
