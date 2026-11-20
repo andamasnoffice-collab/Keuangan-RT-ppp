@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -251,6 +251,9 @@ export async function createMonthlyBills(period, recordedBy) {
       for(const cat of ["kas","sampah","air"]){
         const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:cat==="air"?Math.max(0,row.air.amount-Number(row.air.openingArrears||0)):row[cat].amount,createdAt:now});
         if(invoice)updates[`journal_entries/${invoice.id}`]=invoice;
+        const advanceAmount=cat==="kas"?kasAdvance:cat==="sampah"?sampahAdvance:0;
+        const advanceJournal=buildAdvanceApplicationJournal({id:"advance_apply_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:advanceAmount,createdAt:now});
+        if(advanceJournal)updates["journal_entries/"+advanceJournal.id]=advanceJournal;
       }
       if(Object.keys(applied).length){
         const paymentRef=push(root(`paymentsByMonth/${period}`));
