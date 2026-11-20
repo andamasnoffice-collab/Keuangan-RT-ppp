@@ -222,13 +222,18 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             }
             const airAppliedTotal=airApplied+airDepositUsed;
             if(airAppliedTotal>0){
-              const balance=await read("category_balances/air")||{};
-              updates["category_balances/air"]={...balance,balance:num(balance.balance)+airAppliedTotal,income:num(balance.income)+airAppliedTotal,updatedAt:timestamp};
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc=airDepositUsed&&airApplied?"Pembayaran Air (tunai + deposit)":airDepositUsed?"Pelunasan Air dari deposit":"Pembayaran Air";
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:"air",amount:airAppliedTotal,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-              summaryDeltas.push({id:txRef.key,category:"air",amount:airAppliedTotal,description:desc});
               totalApplied+=airAppliedTotal;
+            }
+            if(airCash>0){
+              const balance=await read("category_balances/air")||{};
+              updates["category_balances/air"]={...balance,balance:num(balance.balance)+airCash,income:num(balance.income)+airCash,updatedAt:timestamp};
+              const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
+              const desc="Penerimaan kas Air";
+              updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:"air",amount:airCash,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+              summaryDeltas.push({id:txRef.key,category:"air",amount:airCash,description:desc});
             }
             totalDepositUsed+=airDepositUsed;totalSurplus+=airSurplus;
             items.push({cat:"air",cash:airCash,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
