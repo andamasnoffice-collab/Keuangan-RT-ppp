@@ -339,9 +339,13 @@ async function renderDashboard(c){
   }else if(run?.status==="processing"){
     runBadge.className="pill warning";runBadge.textContent="Sedang diproses";
     runButton.disabled=true;runMessage.textContent="Pembuatan tagihan sedang berlangsung.";
+  }else if(run?.status==="needs_reconciliation"){
+    runBadge.className="pill danger";runBadge.textContent="Perlu rekonsiliasi";
+    runButton.disabled=true;runButton.textContent="Tagihan perlu pemeriksaan";
+    runMessage.textContent="Data tagihan utama sudah tersimpan, tetapi pembaruan ringkasan/tunggakan tidak selesai. Jangan buat ulang periode ini.";
   }else if(run?.status==="failed"){
     runBadge.className="pill warning";runBadge.textContent="Perlu dicoba ulang";
-    runMessage.textContent="Percobaan sebelumnya gagal. Tombol dapat digunakan kembali setelah penyebab kegagalan diperiksa.";
+    runMessage.textContent="Percobaan sebelumnya gagal sebelum data utama tersimpan. Periksa penyebabnya sebelum mencoba kembali.";
   }else{
     runBadge.className="pill";runBadge.textContent="Belum dibuat";
     runMessage.textContent="Klik sekali untuk membuat tagihan penuh bagi semua rumah aktif dan kontrak.";
