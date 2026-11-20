@@ -87,6 +87,7 @@ export function cashFlow(entries,{from,to}={}){
   const rows=[];
   for(const entry of Object.values(entries||{})){
     if(from&&entry.period<from||to&&entry.period>to)continue;
+    if(entry.sourceType==="opening_balance")continue;
     for(const l of entry.lines||[]){
       if(!l.account.startsWith("asset.cash."))continue;
       const amount=Number(l.debit||0)-Number(l.credit||0);
