@@ -63,9 +63,10 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               <div class="payment-category-head"><div><h4>${labels[cat]}</h4><span class="muted tiny">Centang bulan yang dilunasi penuh</span></div><strong class="fixed-total">${money(0)}</strong></div>
               <div class="payment-month-checklist" data-fixed-list="${cat}">
                 ${rows.map(row=>{
-                  const paid=row.billExists&&row.amount===0;
-                  const status=!row.billExists?"Tagihan belum dibuat":paid?"Sudah lunas":`Sisa tagihan: ${money(row.amount)}`;
-                  return `<label class="pay-month-row ${paid?"is-paid":!row.billExists?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" ${paid?"checked disabled":!row.billExists?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.billExists?money(row.amount):"—"}</strong></label>`;
+                  const paid=row.paid||row.billExists&&row.amount===0;
+                  const blocked=!row.billExists;
+                  const status=paid?"Sudah lunas":blocked?"Tagihan belum dibuat":row.future?"Pembayaran di muka · tarif dikunci":`Sisa tagihan: ${money(row.amount)}`;
+                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.billExists?money(row.amount):"—"}</strong></label>`;
                 }).join("")}
               </div>
               <small class="muted fixed-help">Wajib berurutan. Centang bulan pertama yang belum lunas, lalu bulan berikutnya. Tidak bisa melompati bulan.</small>
@@ -102,12 +103,13 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       const getSelected=cat=>[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check:checked`)].filter(c=>num(c.dataset.amount)>0);
       const updateFixed=cat=>{
         const checks=[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check`)];
-        const billable=checks.filter(c=>c.dataset.billExists==="true");
+        const billable=checks.filter(c=>c.dataset.sequence==="true");
         let openIndex=billable.findIndex(c=>!c.checked);
         checks.forEach(c=>{
-          if(c.dataset.billExists!=="true"){c.disabled=true;return;}
           if(c.checked&&num(c.dataset.amount)===0){c.disabled=true;return;}
-          c.disabled=openIndex<0?true:billable.indexOf(c)>openIndex;
+          const index=billable.indexOf(c);
+          if(index<0){c.disabled=true;return;}
+          c.disabled=c.dataset.billExists!=="true"||openIndex<0||index>openIndex;
         });
         const total=checks.filter(c=>c.checked&&num(c.dataset.amount)>0).reduce((s,c)=>s+num(c.dataset.amount),0);
         box.querySelector(`.payment-category[data-category="${cat}"] .fixed-total`).textContent=money(total);
