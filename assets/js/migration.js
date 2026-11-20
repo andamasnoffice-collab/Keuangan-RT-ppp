@@ -8,7 +8,7 @@ const categories=["kas","air","sampah"];
 const labels={kas:"Kas RT",air:"Air",sampah:"Sampah"};
 const root=path=>ref(db,path);
 const read=async path=>{const s=await get(root(path));return s.exists()?s.val():null;};
-let parsed=null, households={};
+let parsed=null, households={}, recordedBy=null;
 
 function norm(v){return String(v??"").trim().toLowerCase().replace(/\s+/g," ");}
 function parseAmount(v){
@@ -111,7 +111,7 @@ async function saveMigration(){
   if(!confirm("Sahkan migrasi saldo pembuka per 31 Oktober 2026? Proses hanya boleh dilakukan satu kali dan tidak mengubah transaksi bulan berjalan."))return;
   const button=$("#confirmMigration");button.disabled=true;button.textContent="Menyimpan…";
   const lock=root("opening_migrations/2026-10");
-  const claim=await runTransaction(lock,current=>current?undefined:{status:"processing",startedAt:Date.now(),recordedBy:window.currentUserId||null},{applyLocally:false});
+  const claim=await runTransaction(lock,current=>current&&current.status!=="failed"?undefined:{status:"processing",startedAt:Date.now(),recordedBy},{applyLocally:false});
   if(!claim.committed){button.disabled=false;button.textContent="Sahkan migrasi saldo awal";throw new Error("Migrasi sudah pernah dimulai. Periksa status batch sebelum mencoba lagi.");}
   const batchId=push(root("opening_migration_records")).key,now=Date.now(),updates={};
   try{
@@ -140,7 +140,7 @@ async function saveMigration(){
       s.total=s.kas+s.air+s.sampah;s.periodCount=new Set(parsed.arrears.filter(x=>x.householdId===id&&x.amount>0).map(x=>x.period)).size;s.updatedAt=now;
       updates[`arrearsSummary/${id}`]=s;
     }
-    const record={id:batchId,status:"completed",openingDate:"2026-10-31",goLivePeriod:"2026-11",source:"Buku manual",arrears:parsed.arrears,deposits:parsed.deposits,cash:parsed.cash,recordedBy:window.currentUserId||null,createdAt:now};
+    const record={id:batchId,status:"completed",openingDate:"2026-10-31",goLivePeriod:"2026-11",source:"Buku manual",arrears:parsed.arrears,deposits:parsed.deposits,cash:parsed.cash,recordedBy,createdAt:now};
     updates[`opening_migration_records/${batchId}`]=record;
     updates["opening_migrations/2026-10"]={status:"completed",batchId,completedAt:now,recordedBy:window.currentUserId||null,counts:parsed.counts};
     await update(root(),updates);
@@ -151,4 +151,4 @@ async function saveMigration(){
     button.disabled=false;button.textContent="Sahkan migrasi saldo awal";throw err;
   }
 }
-export async function renderOpeningMigration(c,homes){households=homes||{};await renderMigration(c);}
+export async function renderOpeningMigration(c,homes,userId){households=homes||{};recordedBy=userId||null;await renderMigration(c);}
