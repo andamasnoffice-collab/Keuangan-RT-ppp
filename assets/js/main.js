@@ -132,7 +132,7 @@ function card(label,value,sub=""){return `<div class="stat"><div class="label">$
 function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
-  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",users:"Pengguna",settings:"Pengaturan",masterData:"Master Data"};
+  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",settings:"Pengaturan",masterData:"Master Data"};
   title(names[page]||"Dashboard");
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
@@ -150,7 +150,6 @@ async function render(){
     else if(page==="transactions") await renderTransactions(c);
     else if(page==="reports") await renderReports(c);
     else if(page==="whatsapp") await renderWhatsAppPage(c,{households,currentUser,currentProfile,toast});
-    else if(page==="users") c.innerHTML='<div class="muted-note">Semua akun yang berhasil login memiliki hak pengelolaan yang sama. Penambahan akun dilakukan melalui Firebase Authentication oleh pemilik proyek.</div>';
     else if(page==="settings") await renderSettings(c);
     else if(page==="masterData") renderMasterData(c);
   }catch(e){c.innerHTML=`<div class="muted-note">Gagal memuat data: ${e.message}</div>`;}
