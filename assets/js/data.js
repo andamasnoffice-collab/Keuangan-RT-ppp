@@ -602,7 +602,7 @@ export async function createExpense({category, amount, date, description, proof,
   const balSnap = await get(root(`category_balances/${category}`));
   const balance = balSnap.exists() ? balSnap.val() : {};
   const currentBalance = Number(balance.balance) || 0;
-  if (currentBalance < value) throw new Error("Saldo kategori tidak mencukupi. Periksa saldo awal atau pemasukan terlebih dahulu.");
+  if (currentBalance < value) throw new Error(`Saldo kategori tidak mencukupi. Saldo tersedia ${"Rp "+new Intl.NumberFormat("id-ID").format(currentBalance)}; pengeluaran yang diminta ${"Rp "+new Intl.NumberFormat("id-ID").format(value)}. Periksa sumber dana, saldo awal kategori, dan pemasukan terlebih dahulu.`);
   const timestamp = Date.now();
   const record = {id:expenseRef.key, category, amount:value, date:date || new Date().toISOString().slice(0,10), description:String(description).trim(), proof:String(proof).trim(), recordedBy:recordedBy || null, createdAt:timestamp};
   const updates = {};
