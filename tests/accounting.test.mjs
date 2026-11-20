@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance} from "../assets/js/accounting.js";
+import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance,paymentRecognizedCash,buildWaiverJournal} from "../assets/js/accounting.js";
 const period="2026-11",date="2026-11-20";
 test("invoice accrual records receivable and revenue, not cash",()=>{
  const j=buildInvoiceJournal({id:"inv1",period,date,householdId:"h1",category:"kas",amount:100000});
@@ -38,4 +38,24 @@ test("ledger and cash flow exclude invoices and deposit applications from cash m
  const ledger=summarizeLedger(entries),flow=cashFlow(entries),tb=trialBalance(entries);
  assert.equal(ledger.balanced,true);assert.equal(tb.balanced,true);
  assert.equal(flow.inflow,60000);assert.equal(flow.outflow,5000);assert.equal(flow.net,55000);
+});
+
+test("future fixed prepayment is cash received but not recognized as income until invoice application",()=>{
+ assert.equal(paymentRecognizedCash({cash:100000,applied:100000,advance:true}),0);
+ assert.equal(paymentRecognizedCash({cash:100000,applied:100000}),100000);
+});
+test("air overpayment recognizes only cash applied to receivables, not deposit surplus",()=>{
+
+ assert.equal(paymentRecognizedCash({cash:70000,applied:70000,cashApplied:50000}),50000);
+});
+
+test("waiver writes off receivable without cash movement and stays balanced",()=>{
+ const j=buildWaiverJournal({id:"w1",period,date,householdId:"h1",category:"kas",amount:30000,reason:"Rumah kosong"});
+ assert.equal(j.sourceType,"receivable_waiver");
+ assert.equal(j.totals.debit,30000);
+ assert.equal(j.totals.credit,30000);
+ assert.equal(j.lines.find(x=>x.account==="asset.receivable.kas").credit,30000);
+ assert.equal(j.lines.some(x=>x.account.startsWith("asset.cash.")),false);
+ const flow=cashFlow({w1:j});
+ assert.equal(flow.inflow,0);assert.equal(flow.outflow,0);assert.equal(flow.net,0);
 });

@@ -9,6 +9,7 @@ export const ACCOUNT = Object.freeze({
   ADVANCE_KAS:"liability.advance.kas", ADVANCE_AIR:"liability.advance.air", ADVANCE_SAMPAH:"liability.advance.sampah",
   REVENUE_KAS:"revenue.kas", REVENUE_AIR:"revenue.air", REVENUE_SAMPAH:"revenue.sampah",
   EXPENSE_KAS:"expense.kas", EXPENSE_AIR:"expense.air", EXPENSE_SAMPAH:"expense.sampah",
+  WAIVER_KAS:"expense.waiver.kas", WAIVER_AIR:"expense.waiver.air", WAIVER_SAMPAH:"expense.waiver.sampah",
   OPENING_EQUITY:"equity.opening_balance"
 });
 const CATS=["kas","air","sampah"];
@@ -59,6 +60,13 @@ export function buildPaymentJournal({id,period,date,householdId,items,createdAt}
   if(!lines.length)return null;
   return createJournalEntry({id,sourceType:"payment",sourceId:id,date,period,householdId,description:"Penerimaan pembayaran warga",createdAt,lines});
 }
+export function paymentRecognizedCash(item){
+  if(!item||item.advance)return 0;
+  const cash=amount(item.cash||0);
+  const applied=amount(item.applied||0);
+  const explicit=item.cashApplied;
+  return explicit===undefined?Math.min(cash,applied):Math.min(cash,amount(explicit));
+}
 export function buildAdvanceApplicationJournal({id,period,date,householdId,category,amount:rawAmount,createdAt}){
   if(!CATS.includes(category))throw new Error("Kategori uang muka tidak valid.");
   const n=amount(rawAmount);if(!n)return null;
@@ -73,6 +81,14 @@ export function buildExpenseJournal({id,period,date,category,amount:rawAmount,de
   return createJournalEntry({id,sourceType:"expense",sourceId:id,date,period,description,createdAt,lines:[
     line(ACCOUNT["EXPENSE_"+category.toUpperCase()],n,0,{category}),
     line(ACCOUNT["CASH_"+category.toUpperCase()],0,n,{category})
+  ]});
+}
+export function buildWaiverJournal({id,period,date,householdId,category,amount:rawAmount,reason,recordedBy,createdAt}) {
+  if(!CATS.includes(category)) throw new Error("Kategori pemutihan tidak valid.");
+  const n=amount(rawAmount); if(!n) return null;
+  return createJournalEntry({id,sourceType:"receivable_waiver",sourceId:id,date,period,householdId,description:"Pemutihan "+category+" · "+String(reason||"").slice(0,100),createdAt,lines:[
+    line(ACCOUNT["WAIVER_"+category.toUpperCase()],n,0,{category,householdId,recordedBy:recordedBy||null}),
+    line(ACCOUNT["AR_"+category.toUpperCase()],0,n,{category,householdId})
   ]});
 }
 export function buildOpeningJournal({id,period,date,cash={},receivables={},deposits={},createdAt}){

@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -117,6 +117,44 @@ export async function setHouseholdArrearPeriod(householdId, period, category, am
   await set(root(`arrearsSummary/${householdId}`),totals);
   return totals;
 }
+export async function waiveHouseholdBill({householdId,period,category,reason,recordedBy}) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  if(!householdId||!validPeriod(period)||!["kas","air","sampah"].includes(category)) throw new Error("Rumah, periode, atau kategori pemutihan tidak valid.");
+  if(period>currentPeriodKey()) throw new Error("Pemutihan hanya dapat dilakukan untuk periode berjalan atau sebelumnya.");
+  const cleanReason=String(reason||"").trim().slice(0,180);
+  if(!cleanReason) throw new Error("Alasan pemutihan wajib diisi.");
+  const billPath="bills/"+period+"/"+householdId+"/"+category;
+  const ledgerPath="arrearsLedger/"+householdId+"/"+period;
+  const [bill,ledger,house]=await Promise.all([read(billPath),read(ledgerPath),read("households/"+householdId)]);
+  if(!house) throw new Error("Data rumah tidak ditemukan.");
+  if(ledger?.waivers?.[category]||bill?.waived) throw new Error("Periode ini sudah diputihkan.");
+  const due=Math.max(0,Number(ledger?.[category]??bill?.remaining??((Number(bill?.amount)||0)-(Number(bill?.paidAmount)||0)))||0);
+  if(due<=0) throw new Error("Tidak ada sisa tagihan untuk diputihkan.");
+  const now=Date.now(),waiverId="waiver_"+householdId+"_"+period+"_"+category;
+  const journal=buildWaiverJournal({id:waiverId,period,date:period+"-01",householdId,category,amount:due,reason:cleanReason,recordedBy,createdAt:now});
+  const updatedBill={...(bill||{}),amount:Number(bill?.amount)||due,paidAmount:Number(bill?.paidAmount)||0,remaining:0,status:"waived",waived:true,waivedAmount:due,waiverId,waivedAt:now,waivedBy:recordedBy||null,waiverReason:cleanReason};
+  const updates={
+    [billPath]:updatedBill,
+    [ledgerPath+"/"+category]:0,
+    [ledgerPath+"/waivers/"+category]:{id:waiverId,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now},
+    ["audit_logs/"+push(root("audit_logs")).key]:{type:"household_bill_waived",householdId,period,category,amount:due,reason:cleanReason,recordedBy:recordedBy||null,createdAt:now}
+  };
+  if(journal) updates["journal_entries/"+journal.id]=journal;
+  await writeAndVerify(updates,[billPath,ledgerPath+"/"+category]);
+  const fresh=await getHouseholdArrearLedger(householdId);
+  const totals={kas:0,air:0,sampah:0,total:0,periodCount:0,updatedAt:Date.now()};
+  for(const [month,row] of Object.entries(fresh||{})){
+    if(!validPeriod(month)) continue;
+    let hasDue=false;
+    for(const cat of ["kas","air","sampah"]){const value=Math.max(0,Number(row?.[cat])||0);totals[cat]+=value;if(value>0)hasDue=true;}
+    if(hasDue)totals.periodCount++;
+  }
+  totals.total=totals.kas+totals.air+totals.sampah;
+  await set(root("arrearsSummary/"+householdId),totals);
+  await refreshPublicSnapshotSafely();
+  return {householdId,period,category,amount:due,waiverId};
+}
+
 export async function getHouseholdArrearLedger(householdId) {
   return await read(`arrearsLedger/${householdId}`) || {};
 }
@@ -172,6 +210,55 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
   return use;
 }
 
+export async function syncHouseholdBillingHistory(householdId) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  const [house,settings,ledger]=await Promise.all([
+    read("households/"+householdId),getBillingSettings(),getHouseholdArrearLedger(householdId)
+  ]);
+  if(!house) throw new Error("Data rumah tidak ditemukan.");
+  const start=validPeriod(house.billingStartPeriod)?house.billingStartPeriod:
+    validPeriod(house.openingArrearsPeriod)?house.openingArrearsPeriod:null;
+  const goLive=validPeriod(settings.goLivePeriod)?settings.goLivePeriod:null;
+  if(!start||!goLive||start>=goLive||house.status==="empty"||house.status==="inactive") return {created:0,from:start,to:goLive};
+  const rates={kas:Math.max(0,Number(settings.kasMonthly)||0),sampah:Math.max(0,Number(settings.sampahMonthly)||0)};
+  const updates={},now=Date.now();
+  let created=0;
+  for(const cat of ["kas","sampah"]){
+    if(rates[cat]<=0) continue;
+    for(let period=start;period<goLive;period=nextMonth(period)){
+      const existingLedger=ledger?.[period]?.[cat];
+      const existingBill=await read("bills/"+period+"/"+householdId+"/"+cat);
+      if(existingLedger!==undefined&&existingLedger!==null) continue;
+      if(existingBill){
+        const remaining=Math.max(0,Number(existingBill.remaining??(Number(existingBill.amount||0)-Number(existingBill.paidAmount||0)))||0);
+        updates["arrearsLedger/"+householdId+"/"+period+"/"+cat]=remaining;
+        created++;
+        continue;
+      }
+      updates["bills/"+period+"/"+householdId+"/"+cat]={amount:rates[cat],paidAmount:0,remaining:rates[cat],status:"unpaid",openingArrears:true,createdAt:now,source:"household_start_period_sync"};
+      updates["arrearsLedger/"+householdId+"/"+period+"/"+cat]=rates[cat];
+      const journal=buildOpeningJournal({id:"opening_arrears_"+householdId+"_"+period+"_"+cat,period:goLive,date:goLive+"-01",cash:{},receivables:{[cat]:rates[cat]},deposits:{},createdAt:now});
+      if(journal) updates["journal_entries/"+journal.id]=journal;
+      created++;
+    }
+  }
+  if(created){
+    await writeAndVerify(updates,["arrearsLedger/"+householdId]);
+    const fresh=await getHouseholdArrearLedger(householdId);
+    const totals={kas:0,air:0,sampah:0,total:0,periodCount:0,updatedAt:Date.now()};
+    for(const [period,row] of Object.entries(fresh||{})){
+      if(!validPeriod(period)) continue;
+      let hasDue=false;
+      for(const cat of ["kas","air","sampah"]){const n=Math.max(0,Number(row?.[cat])||0);totals[cat]+=n;if(n>0)hasDue=true;}
+      if(hasDue)totals.periodCount++;
+    }
+    totals.total=totals.kas+totals.air+totals.sampah;
+    await set(root("arrearsSummary/"+householdId),totals);
+    await refreshPublicSnapshotSafely();
+  }
+  return {created,from:start,to:goLive};
+}
+
 export async function createMonthlyBills(period, recordedBy) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if (!validPeriod(period)) throw new Error("Periode tagihan tidak valid.");
@@ -201,7 +288,7 @@ export async function createMonthlyBills(period, recordedBy) {
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
       const arrearsStart=h.arrearsStartPeriod||{};
       const legacyStart=h.openingArrearsPeriod||goLivePeriod;
-      const startFor=(cat)=>validPeriod(arrearsStart[cat])?arrearsStart[cat]:(h.openingArrearsRecorded&&validPeriod(legacyStart)&&Number(h.openingArrears?.[cat])>0?legacyStart:null);
+      const startFor=(cat)=>validPeriod(arrearsStart[cat])?arrearsStart[cat]:(validPeriod(h.billingStartPeriod)?h.billingStartPeriod:(h.openingArrearsRecorded&&validPeriod(legacyStart)?legacyStart:null));
       for(const cat of ["kas","sampah"]){
         const start=startFor(cat);
         if(!start||start>=goLivePeriod)continue;
