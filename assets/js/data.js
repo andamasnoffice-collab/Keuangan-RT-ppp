@@ -180,6 +180,7 @@ export async function createMonthlyBills(period, recordedBy) {
     if(state?.status==="completed") throw new Error(`Tagihan periode ${period} sudah pernah dibuat. Tidak dapat dibuat dua kali.`);
     throw new Error("Pembuatan tagihan periode ini sedang diproses atau perlu pemeriksaan pengurus.");
   }
+  let primaryCommitted=false;
   try {
     const [homes,settings,existing,deposits,balances]=await Promise.all([
       getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances")
@@ -235,6 +236,7 @@ export async function createMonthlyBills(period, recordedBy) {
     if(Object.keys(updates).some(path=>path.startsWith("deposit_ledger/"))) verifyPaths.push("deposit_ledger");
     if(Object.keys(updates).some(path=>path.startsWith(`paymentsByMonth/${period}/`))) verifyPaths.push(`paymentsByMonth/${period}`);
     await writeAndVerify(updates,verifyPaths);
+    primaryCommitted=true;
     for(const [id,row] of active.map(([id])=>[id,updates[`bills/${period}/${id}`]])){
       await setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining);
       await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
@@ -251,7 +253,7 @@ export async function createMonthlyBills(period, recordedBy) {
     await refreshPublicSnapshotSafely();
     return {period,householdCount:active.length};
   } catch(error) {
-    await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
+    await set(lockRef,{status:primaryCommitted?"needs_reconciliation":"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
     throw error;
   }
 }
@@ -266,6 +268,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null,rowCount:rows.length};
   },{applyLocally:false});
   if(!claim.committed) throw new Error(claim.snapshot.val()?.status==="completed"?"Data meter periode ini sudah pernah diimpor.":"Impor periode ini sedang diproses atau perlu pemeriksaan.");
+  let primaryCommitted=false;
   try{
     const homes=await getHouseholds();
     const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -321,6 +324,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     }
     updates[`water_import_runs/${period}`]={status:"completed",period,completedAt:now,recordedBy:recordedBy||null,rowCount:rows.length,created,matched,meters,charges,needsReview};
     await writeAndVerify(updates,[`water_import_runs/${period}/status`]);
+    primaryCommitted=true;
     for(const row of rows){
       const blockKey=norm(row.block);
       const house=byBlock.get(blockKey);
@@ -329,7 +333,8 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     await refreshPublicSnapshotSafely();
     return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
   }catch(error){
-    await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
+    await set(lockRef,{status:primaryCommitted?"needs_reconciliation":"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
+    if(primaryCommitted)throw new Error("Data impor utama sudah tersimpan, tetapi sinkronisasi lanjutan gagal. Status dikunci untuk pemeriksaan; jangan impor ulang. Detail: "+error.message);
     throw error;
   }
 }
