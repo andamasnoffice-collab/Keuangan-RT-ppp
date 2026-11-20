@@ -45,11 +45,12 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       const fixedRows=Object.fromEntries(fixedCategories.map(cat=>[cat,displayPeriods.map(row=>{
         const hasBill=Object.prototype.hasOwnProperty.call(row.categories,cat);
         const future=row.period>currentPeriod;
+        const waived=!!row.categories?.waivers?.[cat];
         const advance=advances?.[row.period]?.[cat]||null;
         const currentRate=Number(cat==="kas"?settings.kasMonthly:settings.sampahMonthly)||0;
         const lockedRate=Number(advance?.rate)||currentRate;
         const amount=hasBill?num(row.categories[cat]):future?Math.max(0,lockedRate-num(advance?.amount)):0;
-        return {...row,billExists:hasBill||future,sequence:hasBill||future,future,advance,amount,paid:hasBill?num(row.categories[cat])===0:!!advance&&num(advance.amount)>=lockedRate};
+        return {...row,billExists:hasBill||future,sequence:hasBill||future,future,advance,amount,waived,paid:waived||hasBill?num(row.categories[cat])===0:!!advance&&num(advance.amount)>=lockedRate};
       })]));
       const airRows=rowsFor("air");
       const airGross=airRows.reduce((sum,row)=>sum+num(row.categories.air),0);
@@ -66,8 +67,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
                 ${rows.map(row=>{
                   const paid=row.paid||row.billExists&&row.amount===0;
                   const blocked=!row.billExists;
-                  const status=paid?"Sudah lunas":blocked?"Tagihan belum dibuat":row.future?"Pembayaran di muka · tarif dikunci":`Sisa tagihan: ${money(row.amount)}`;
-                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}" title="${esc(`${monthLabel(row.period)} · ${status}`)}"><input aria-label="${esc(`Bayar ${monthLabel(row.period)}`)}" type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${new Intl.DateTimeFormat("id-ID",{month:"short"}).format(new Date(Number(row.period.slice(0,4)),Number(row.period.slice(5,7))-1,1))}</b><small>${row.period.slice(0,4)}</small></span></label>`;
+                  const status=row.waived?"Sudah diputihkan":paid?"Sudah lunas":blocked?"Tagihan belum dibuat":row.future?"Pembayaran di muka · tarif dikunci":`Sisa tagihan: ${money(row.amount)}`;
+                  return `<label class="pay-month-row ${row.waived?"is-waived":paid?"is-paid":blocked?"is-not-created":""}" title="${esc(`${monthLabel(row.period)} · ${status}`)}"><input aria-label="${esc(`Bayar ${monthLabel(row.period)}`)}" type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${new Intl.DateTimeFormat("id-ID",{month:"short"}).format(new Date(Number(row.period.slice(0,4)),Number(row.period.slice(5,7))-1,1))}</b><small>${row.period.slice(0,4)} · ${row.waived?"Diputihkan":""}</small></span></label>`;
                 }).join("")}
               </div>
               <small class="muted fixed-help">Wajib berurutan. Centang bulan pertama yang belum lunas, lalu bulan berikutnya. Tidak bisa melompati bulan.</small>
