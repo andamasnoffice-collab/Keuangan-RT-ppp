@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -393,6 +393,8 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...baseBill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_corrected",period,householdId,previousMeter:previous,oldCurrentMeter:existing.currentMeter,newCurrentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
+  const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(bill?.amount)||0),createdAt:timestamp});
+  if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
@@ -428,6 +430,8 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
+  const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(baseBill.amount)||0),createdAt:timestamp});
+  if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
