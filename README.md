@@ -25,7 +25,7 @@
 7. Laporan tahunan merupakan snapshot; buat ulang setelah ada koreksi transaksi pada tahun terkait.
 
 ## Node Firebase utama
-- Privat: `households`, `bills`, `arrearsLedger`, `arrearsSummary`, `paymentsByMonth`, `expensesByMonth`, `transactionsByMonth`, `deposits`, `deposit_ledger`, `water_readings`, `category_balances`, `financeSummaryByMonth`, `annual_summaries`, `billing_runs`, `water_import_runs`, `settings`, `audit_logs`, `whatsapp_notifications`.
+- Privat: `households`, `bills`, `arrearsLedger`, `arrearsSummary`, `fixed_advance_payments`, `paymentsByMonth`, `expensesByMonth`, `transactionsByMonth`, `deposits`, `deposit_ledger`, `water_readings`, `category_balances`, `financeSummaryByMonth`, `annual_summaries`, `billing_runs`, `water_import_runs`, `settings`, `audit_logs`, `whatsapp_notifications`.
 - Publik: `public_views`.
 - Aturan akses tetap tertutup pada root; node privat memerlukan autentikasi; hanya `public_views` yang dapat dibaca publik.
 
@@ -37,3 +37,8 @@
 
 ## Tarif
 Menu Pengaturan menyimpan tarif Kas RT, administrasi Air, tarif pemakaian per m³, dan iuran Sampah di `settings/billingRates`. Perubahan tarif berlaku untuk pembentukan tagihan berikutnya; tagihan yang sudah dibuat mempertahankan nilai nominal yang tersimpan pada tagihan tersebut.
+
+
+### Pembayaran di muka Kas RT dan Sampah
+
+Pembayaran Kas RT dan Sampah dapat dialokasikan ke bulan mendatang tanpa menunggu tagihan bulanan dibuat. Catatan disimpan per rumah/periode/kategori pada `fixed_advance_payments`, dengan nominal dan tarif dikunci pada tanggal pembayaran. Saat `createMonthlyBills` dijalankan untuk periode tersebut, tagihan dibuat menggunakan tarif yang terkunci dan langsung berstatus lunas; pendapatan tidak dicatat ulang karena sudah masuk pada bulan transaksi pembayaran. Pembayaran tetap penuh dan berurutan. Air tidak memakai mekanisme ini.
