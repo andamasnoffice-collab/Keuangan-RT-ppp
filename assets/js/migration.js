@@ -126,8 +126,11 @@ async function saveMigration(){
         if(Number(existingDeposits?.[x.householdId]?.[cat])>0)throw new Error("Deposit "+x.block+" "+labels[cat]+" sudah ada. Tidak ditimpa.");
         if(x.values[cat]>0)updates[`deposits/${x.householdId}/${cat}`]=x.values[cat];
       }
-      const entry=push(root("deposit_ledger"));
-      updates[`deposit_ledger/${entry.key}`]={householdId:x.householdId,category:"all",amount:Object.values(x.values).reduce((a,b)=>a+b,0),before:0,after:Object.values(x.values).reduce((a,b)=>a+b,0),type:"opening_balance_migration",date:"2026-10-31",period:"2026-10",batchId,source:"Buku manual",createdAt:now};
+      for(const cat of categories){
+        const amount=x.values[cat];if(amount<=0)continue;
+        const entry=push(root("deposit_ledger"));
+        updates[`deposit_ledger/${entry.key}`]={householdId:x.householdId,category:cat,amount,before:0,after:amount,type:"opening_balance_migration",date:"2026-10-31",period:"2026-10",batchId,source:"Buku manual",createdAt:now};
+      }
     }
     for(const x of parsed.cash){
       const old=balances?.[x.category]||{};
