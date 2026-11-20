@@ -84,7 +84,7 @@ async function renderMigration(c){
     ${production?'<div class="muted-note" style="margin-top:16px"><b>Mode aman: hanya pratinjau.</b> Branch ini masih menunjuk proyek Firebase produksi <code>keuangan-rt-ppp</code>. Tombol penyimpanan dinonaktifkan agar migrasi uji tidak menulis atau mengubah data warga produksi. Setelah proyek Firebase uji dikonfigurasi, proses simpan dapat diuji di sana.</div>':""}
     ${marker?.status==="completed"?'<p class="tiny muted">Batch '+String(marker.batchId||"")+' telah disahkan pada '+new Date(marker.completedAt||0).toLocaleString("id-ID")+'. Migrasi ulang ditolak untuk mencegah duplikasi.</p>':""}
   </section>`;
-  $("#migrationTemplate").addEventListener("click",downloadTemplate);
+  $("#migrationTemplate").addEventListener("click",()=>downloadTemplate().catch(err=>{const p=$("#migrationPreview");p.textContent="Gagal membuat template: "+err.message;}));
   $("#migrationFile").addEventListener("change",async e=>{
     const file=e.target.files?.[0];parsed=null;const target=$("#migrationPreview");
     if(!file)return;
