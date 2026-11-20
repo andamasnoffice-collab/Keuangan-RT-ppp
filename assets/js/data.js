@@ -52,12 +52,6 @@ export function watch(path, callback, onError=console.error) {
     if(stopValue) stopValue();
   };
 }
-export async function createRecord(path, data) {
-  if (!db) throw new Error("Firebase belum dikonfigurasi.");
-  const r = push(root(path));
-  await set(r, {...data, id:r.key, createdAt:Date.now()});
-  return r.key;
-}
 export async function saveHousehold(data) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   const id = data.id || push(root("households")).key;
@@ -121,21 +115,6 @@ export async function setHouseholdArrearPeriod(householdId, period, category, am
 export async function getHouseholdArrearLedger(householdId) {
   return await read(`arrearsLedger/${householdId}`) || {};
 }
-export async function applyArrearsDelta(householdId, entryId, delta) {
-  const summaryRef=root(`arrearsSummary/${householdId}`);
-  const result=await runTransaction(summaryRef,current=>{
-    const s=current||{kas:0,air:0,sampah:0,total:0,applied:{}};
-    s.applied=s.applied||{};
-    if(s.applied[entryId]) return s;
-    for(const cat of ["kas","air","sampah"]) s[cat]=Math.max(0,(Number(s[cat])||0)+(Number(delta[cat])||0));
-    s.total=s.kas+s.air+s.sampah;
-    s.applied[entryId]=true;
-    s.updatedAt=Date.now();
-    return s;
-  },{applyLocally:false});
-  if(!result.committed) throw new Error("Ringkasan tunggakan tidak berhasil diperbarui.");
-  return result.snapshot.val();
-}
 export async function getHouseholds() {
   return await read("households") || {};
 }
@@ -152,53 +131,6 @@ export async function getMonthTransactions(period) {
   if(!validPeriod(period)) throw new Error("Periode transaksi tidak valid.");
   return await read(`transactionsByMonth/${period}`) || {};
 }
-export async function migrateMonthlyIndexes(recordedBy) {
-  if(!db) throw new Error("Firebase belum dikonfigurasi.");
-  const lock=root("settings/monthlyIndexMigration");
-  const claim=await runTransaction(lock,current=>{
-    if(current?.status==="completed") return;
-    if(current?.status==="processing" && Date.now()-Number(current.startedAt||Date.now())<10*60*1000) return;
-    return {status:"processing",startedAt:Date.now(),recordedBy:recordedBy||null};
-  },{applyLocally:false});
-  if(!claim.committed) throw new Error("Migrasi indeks sudah selesai atau sedang dijalankan. Tidak perlu klik lagi.");
-  try{
-    const [transactions,expenses,payments]=await Promise.all([
-      read("transactions"),read("expenses"),read("payments")
-    ]);
-    const updates={};
-    const periodOf=row=>{
-      const raw=row?.date||row?.createdAt||row?.timestamp;
-      if(typeof raw==="number") return new Date(raw).toISOString().slice(0,7);
-      const s=String(raw||"");
-      if(/^\d{4}-\d{2}/.test(s)) return s.slice(0,7);
-      const n=Number(s);
-      return Number.isFinite(n)&&n>0?new Date(n).toISOString().slice(0,7):"";
-    };
-    const add=(base,rows)=>{
-      for(const [id,row] of Object.entries(rows||{})){
-        const period=periodOf(row);
-        if(!validPeriod(period)) continue;
-        updates[`${base}/${period}/${id}`]=row;
-      }
-    };
-    add("transactionsByMonth",transactions);
-    add("expensesByMonth",expenses);
-    add("paymentsByMonth",payments);
-    const entries=Object.entries(updates);
-    for(let i=0;i<entries.length;i+=400){
-      const batch=Object.fromEntries(entries.slice(i,i+400));
-      await update(ref(db),batch);
-      await set(lock,{status:"processing",startedAt:claim.snapshot.val()?.startedAt||Date.now(),processed:Math.min(i+400,entries.length),total:entries.length,recordedBy:recordedBy||null});
-    }
-    const result={status:"completed",completedAt:Date.now(),recordedBy:recordedBy||null,counts:{transactions:Object.keys(transactions||{}).length,expenses:Object.keys(expenses||{}).length,payments:Object.keys(payments||{}).length},indexedPaths:entries.length};
-    await set(lock,result);
-    return result;
-  }catch(error){
-    await set(lock,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
-    throw error;
-  }
-}
-
 const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 const currentPeriodKey = () => { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`; };
 async function applyDepositToWaterBill(period,householdId,recordedBy){
