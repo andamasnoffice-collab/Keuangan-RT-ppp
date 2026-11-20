@@ -140,10 +140,9 @@ const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 const nextMonth = value => { const [y,m]=value.split("-").map(Number); const d=new Date(y,m,1); return String(d.getFullYear())+"-"+String(d.getMonth()+1).padStart(2,"0"); };
 const currentPeriodKey = () => { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`; };
 async function applyDepositToWaterBill(period,householdId,recordedBy){
-  const [bill,deposit,balance]=await Promise.all([
+  const [bill,deposit]=await Promise.all([
     read(`bills/${period}/${householdId}/air`),
-    read(`deposits/${householdId}/air`),
-    read("category_balances/air")
+    read(`deposits/${householdId}/air`)
   ]);
   if(!bill)return 0;
   const due=Math.max(0,Number(bill.amount??bill.totalAmount??bill.remaining)||0);
@@ -165,9 +164,8 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
     [`deposit_ledger/${ledgerRef.key}`]:{householdId,category:"air",amount:-use,before:available,after:depositAfter,type:"deposit_auto_applied",date:period+"-01",period,paymentId:paymentRef.key,createdAt:now,recordedBy:recordedBy||null},
     [`paymentsByMonth/${period}/${paymentRef.key}`]:{id:paymentRef.key,type:"automatic_deposit_application",householdId,period,date:period+"-01",items:[{cat:"air",cash:0,depositUsed:use,applied:use,surplus:0,remaining}],cashReceived:0,depositUsed:use,appliedToBills:use,surplusDeposit:0,method:"deposit_auto",note:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
     [`transactionsByMonth/${period}/${txRef.key}`]:{id:txRef.key,type:"payment",category:"air",amount:use,householdId,referenceId:paymentRef.key,date:period+"-01",description:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
-    "category_balances/air":{...(balance||{}),balance:(Number(balance?.balance)||0)+use,income:(Number(balance?.income)||0)+use,updatedAt:now}
   };
-  await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`,`category_balances/air`]);
+  await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`]);
   await retryIdempotent(()=>applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"}));
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   return use;
@@ -255,12 +253,6 @@ export async function createMonthlyBills(period, recordedBy) {
         if(depositJournal)updates[`journal_entries/${depositJournal.id}`]=depositJournal;
       }
     }
-    for(const cat of ["air"]){
-      if(depositSummary[cat]>0){
-        const balance=balances?.[cat]||{};
-        updates[`category_balances/${cat}`]={...balance,balance:(Number(balance.balance)||0)+depositSummary[cat],income:(Number(balance.income)||0)+depositSummary[cat],updatedAt:now};
-      }
-    }
     updates[`billing_runs/${period}/status`]="processing";
     updates[`billing_runs/${period}/householdCount`]=active.length;
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
@@ -277,15 +269,6 @@ export async function createMonthlyBills(period, recordedBy) {
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining));
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"air",row.air.remaining));
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining));
-    }
-    for(const cat of ["air"]){
-      if(depositSummary[cat]>0){
-        const txRef=push(root(`transactionsByMonth/${period}`));
-        const summaryId=txRef.key;
-        const txRecord={id:summaryId,type:"payment",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga",recordedBy:recordedBy||null,createdAt:now};
-        await retryIdempotent(()=>set(txRef,txRecord));
-        await retryIdempotent(()=>applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"}));
-      }
     }
     await update(lockRef,{status:"completed",completedAt:Date.now()});
     await refreshPublicSnapshotSafely();
