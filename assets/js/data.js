@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -243,10 +243,16 @@ export async function createMonthlyBills(period, recordedBy) {
       }
       updates[`bills/${period}/${id}`]=row;
       updates[`arrearsLedger/${id}/${period}`]={kas:row.kas.remaining,sampah:row.sampah.remaining,air:row.air.remaining,updatedAt:now};
+      for(const cat of ["kas","sampah","air"]){
+        const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:row[cat].amount,createdAt:now});
+        if(invoice)updates[`journal_entries/${invoice.id}`]=invoice;
+      }
       if(Object.keys(applied).length){
         const paymentRef=push(root(`paymentsByMonth/${period}`));
         const items=Object.entries(applied).map(([cat,amount])=>({cat,cash:0,depositUsed:amount,applied:amount,surplus:0,remaining:row[cat].remaining}));
         updates[`paymentsByMonth/${period}/${paymentRef.key}`]={id:paymentRef.key,type:"automatic_deposit_application",householdId:id,householdLabel:h.block||"",period,date:period+"-01",items,cashReceived:0,depositUsed:Object.values(applied).reduce((a,b)=>a+b,0),appliedToBills:Object.values(applied).reduce((a,b)=>a+b,0),surplusDeposit:0,method:"deposit_auto",note:"Pemotongan deposit otomatis saat tagihan dibuat",recordedBy:recordedBy||null,createdAt:now};
+        const depositJournal=buildPaymentJournal({id:"payment_"+paymentRef.key,period,date:period+"-01",householdId:id,items,createdAt:now});
+        if(depositJournal)updates[`journal_entries/${depositJournal.id}`]=depositJournal;
       }
     }
     for(const cat of ["air"]){
