@@ -93,6 +93,10 @@
     "annual_summaries": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "fixed_advance_payments": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
