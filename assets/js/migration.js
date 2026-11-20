@@ -146,7 +146,7 @@ async function saveMigration(){
     }
     const record={id:batchId,status:"completed",openingDate:"2026-10-31",goLivePeriod:"2026-11",source:"Buku manual",arrears:parsed.arrears,deposits:parsed.deposits,cash:parsed.cash,recordedBy,createdAt:now};
     updates[`opening_migration_records/${batchId}`]=record;
-    updates["opening_migrations/2026-10"]={status:"completed",batchId,completedAt:now,recordedBy:window.currentUserId||null,counts:parsed.counts};
+    updates["opening_migrations/2026-10"]={status:"completed",batchId,completedAt:now,recordedBy,counts:parsed.counts};
     await update(root(),updates);
     $("#migrationPreview").insertAdjacentHTML("beforeend",'<p class="pill success">Migrasi tersimpan.</p>');
     button.textContent="Migrasi selesai";
