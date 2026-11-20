@@ -11,7 +11,7 @@ const blockCollator=new Intl.Collator("id",{numeric:true,sensitivity:"base"});
 const compareBlocks=(a,b)=>blockCollator.compare(String(a||"").trim(),String(b||"").trim());
 const parseRupiah = value => Number(String(value??"").replace(/[^0-9-]/g,"")) || 0;
 const formatRupiahInput = value => String(value??"").replace(/[^0-9]/g,"").replace(/\B(?=(\d{3})+(?!\d))/g,".");
-function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const start=input.selectionStart;const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
+function bindRupiahInputs(root){root.querySelectorAll("input[data-rupiah]").forEach(input=>{input.value=formatRupiahInput(input.value);input.addEventListener("input",()=>{const before=input.value;input.value=formatRupiahInput(before);try{input.setSelectionRange(input.value.length,input.value.length);}catch{}});});}
 const monthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const THEME_KEY="keuangan-rt-theme";
 function applyTheme(theme){
