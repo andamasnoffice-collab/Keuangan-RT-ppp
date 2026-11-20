@@ -346,19 +346,20 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   const [house,settings,bill,existing]=await Promise.all([
     read(`households/${householdId}`),getBillingSettings(),read(`bills/${period}/${householdId}/air`),read(`water_readings/${period}/${householdId}`)
   ]);
-  if(!house||!bill||!existing) throw new Error("Data meter/tagihan tidak ditemukan.");
-  const previous=Number(existing.previousMeter)||0;
+  if(!house||!existing) throw new Error("Data rumah atau catatan meter tidak ditemukan.");
+  const baseBill=bill||{amount:0,paidAmount:0,remaining:0,status:"unpaid"};
+  const previous=Number(existing.previousMeter??house.currentWaterMeter??house.initialWaterMeter)||0;
   if(value<previous) throw new Error(`Meter akhir tidak boleh lebih kecil dari meter awal (${previous}).`);
   const usage=Number((value-previous).toFixed(3));
   const rate=Number(existing.rate??settings.waterPerM3)||0;
   const admin=Number(existing.adminAmount??bill.adminAmount??settings.waterAdmin)||0;
   const usageAmount=Math.round(usage*rate),total=admin+usageAmount;
-  const paid=Number(bill.paidAmount)||0,remaining=Math.max(0,total-paid),timestamp=Date.now();
+  const paid=Number(baseBill.paidAmount)||0,remaining=Math.max(0,total-paid),timestamp=Date.now();
   const reading={...existing,period,householdId,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,totalAmount:total,recordedBy:recordedBy||null,updatedAt:timestamp};
   const updates={};
   updates[`water_readings/${period}/${householdId}`]=reading;
   updates[`households/${householdId}/currentWaterMeter`]=value;
-  updates[`bills/${period}/${householdId}/air`]={...bill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
+  updates[`bills/${period}/${householdId}/air`]={...baseBill,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,amount:total,remaining,paidAmount:paid,status:remaining===0?"paid":paid>0?"partial":"unpaid",meterRecordedAt:timestamp};
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_corrected",period,householdId,previousMeter:previous,oldCurrentMeter:existing.currentMeter,newCurrentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
