@@ -782,10 +782,12 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   }
 
   // Reverse deposit movements belonging to the deleted month, then keep all other periods intact.
-  const [depositLedger,deposits,monthly,balances,settings,annual]=await Promise.all([
+  const [depositLedger,deposits,monthly,balances,settings,annual,waivers]=await Promise.all([
     read("deposit_ledger"),read("deposits"),read("financeSummaryByMonth"),
-    read("category_balances"),getBillingSettings(),read("annual_summaries")
+    read("category_balances"),getBillingSettings(),read("annual_summaries"),read("receivable_waivers")
   ]);
+  for(const [houseId,periods] of Object.entries(waivers||{}))if(periods?.[p])updates[`receivable_waivers/${houseId}/${p}`]=null;
+
   const removedDeposits={};
   for(const [id,row] of Object.entries(depositLedger||{})){
     if(periodOf(row)!==p)continue;
