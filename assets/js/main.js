@@ -416,7 +416,7 @@ function houseWaiverDialog(house) {
     }catch(err){toast("Pemutihan gagal: "+err.message);button.disabled=false;button.textContent="Terapkan pemutihan";}
   });
 }
-const HOUSE_IMPORT_HEADERS=["Blok / No Rumah","Nama Kepala Keluarga","Alamat Lengkap","Nomor HP","Nomor WhatsApp","Status (active/empty/rented)","Meter Air Awal (m3)","Anggota 1 - Nama","Anggota 1 - Hubungan","Anggota 2 - Nama","Anggota 2 - Hubungan","Anggota 3 - Nama","Anggota 3 - Hubungan","Anggota 4 - Nama","Anggota 4 - Hubungan","Anggota 5 - Nama","Anggota 5 - Hubungan","Periode Tunggakan Awal (YYYY-MM)","Tunggakan Awal Kas RT (Rp)","Tunggakan Awal Air (Rp)","Tunggakan Awal Sampah (Rp)"];
+const HOUSE_IMPORT_HEADERS=["Blok / No Rumah","Nama Kepala Keluarga","Alamat Lengkap","Nomor HP","Nomor WhatsApp","Status (active/empty/rented)","Meter Air Awal (m3)","Anggota 1 - Nama","Anggota 1 - Hubungan","Anggota 2 - Nama","Anggota 2 - Hubungan","Anggota 3 - Nama","Anggota 3 - Hubungan","Anggota 4 - Nama","Anggota 4 - Hubungan","Anggota 5 - Nama","Anggota 5 - Hubungan","Periode Tunggakan Awal (YYYY-MM)","Tunggakan Awal Kas RT (Rp)","Tunggakan Awal Air (Rp)","Tunggakan Awal Sampah (Rp)","Bulan Mulai Kewajiban (YYYY-MM)"];
 function downloadHouseholdTemplate(){
   ensureXLSX().then(XLSX=>{
     const wb=XLSX.utils.book_new();
@@ -432,6 +432,7 @@ function downloadHouseholdTemplate(){
       ["Meter Air Awal: angka meter saat rumah mulai dicatat, satuan m³. Isi 0 jika belum ada data."],
       ["Anggota: isi nama dan hubungan pada pasangan kolom Anggota 1 sampai Anggota 5. Kolom anggota boleh kosong."],
       ["Periode Tunggakan Awal: format YYYY-MM, contoh 2026-01. Wajib diisi jika salah satu nominal tunggakan awal lebih dari 0."],
+      ["Bulan Mulai Kewajiban: format YYYY-MM. Isi bulan pertama rumah mulai dikenai Kas RT dan Sampah. Jika kosong, digunakan titik awal pembukuan digital."],
       ["Tunggakan awal Kas RT, Air, Sampah: isi sisa tagihan yang belum dibayar, angka rupiah tanpa tanda Rp."],
       ["Nomor HP/WhatsApp: gunakan format teks, contoh 081234567890."],
       ["Baris dengan Blok/No Rumah yang sudah ada di database akan dilewati, tidak menimpa data lama."],
@@ -461,7 +462,7 @@ function parseHouseholdImport(matrix){
     const arrears={kas:num(row,HOUSE_IMPORT_HEADERS[18]),air:num(row,HOUSE_IMPORT_HEADERS[19]),sampah:num(row,HOUSE_IMPORT_HEADERS[20])};
     const members=[];
     for(let n=1;n<=5;n++){const name=val(row,`Anggota ${n} - Nama`);const relation=val(row,`Anggota ${n} - Hubungan`);if(name)members.push({name,relation:relation||"lainnya"});}
-    return {rowNumber:index+2,block:val(row,HOUSE_IMPORT_HEADERS[0]),headName:val(row,HOUSE_IMPORT_HEADERS[1]),address:val(row,HOUSE_IMPORT_HEADERS[2]),phone:val(row,HOUSE_IMPORT_HEADERS[3]),whatsapp:val(row,HOUSE_IMPORT_HEADERS[4]),status,initialWaterMeter:num(row,HOUSE_IMPORT_HEADERS[6]),period,arrears,members};
+    return {rowNumber:index+2,block:val(row,HOUSE_IMPORT_HEADERS[0]),headName:val(row,HOUSE_IMPORT_HEADERS[1]),address:val(row,HOUSE_IMPORT_HEADERS[2]),phone:val(row,HOUSE_IMPORT_HEADERS[3]),whatsapp:val(row,HOUSE_IMPORT_HEADERS[4]),status,initialWaterMeter:num(row,HOUSE_IMPORT_HEADERS[6]),period,arrears,billingStartPeriod:val(row,"Bulan Mulai Kewajiban (YYYY-MM)"),members};
   });
 }
 async function handleHouseholdImport(event){
@@ -492,16 +493,17 @@ async function handleHouseholdImport(event){
     $("#cancelHouseImport").addEventListener("click",()=>{preview.innerHTML="";input.value="";});
     $("#confirmHouseImport").addEventListener("click",async()=>{
       const button=$("#confirmHouseImport");button.disabled=true;button.textContent="Mengimpor…";
-      let created=0,failed=[];
+      let created=0,failed=[];const importSettings=await getBillingSettings();
       for(const row of ready){
         try{
           const members={head:{name:row.headName,relation:"kepala_keluarga",status:"active"}};
           row.members.forEach((member,index)=>members[`m${index+1}`]={...member,status:"active"});
           const openingArrears=row.arrears;
           const hasArrears=Object.values(openingArrears).some(v=>v>0);
-          const data={block:row.block,headName:row.headName,address:row.address,phone:row.phone,whatsapp:{primaryNumber:row.whatsapp||row.phone||"",enabled:true},initialWaterMeter:row.initialWaterMeter,currentWaterMeter:row.initialWaterMeter,status:row.status,members,openingArrears,openingArrearsPeriod:hasArrears?row.period:null,openingArrearsRecorded:hasArrears,importedAt:Date.now(),importedBy:currentUser?.uid||null};
+          const data={billingStartPeriod:row.billingStartPeriod||importSettings.goLivePeriod||monthKey(),block:row.block,headName:row.headName,address:row.address,phone:row.phone,whatsapp:{primaryNumber:row.whatsapp||row.phone||"",enabled:true},initialWaterMeter:row.initialWaterMeter,currentWaterMeter:row.initialWaterMeter,status:row.status,members,openingArrears,openingArrearsPeriod:hasArrears?row.period:null,openingArrearsRecorded:hasArrears,importedAt:Date.now(),importedBy:currentUser?.uid||null};
           const id=await saveHousehold(data);
           if(hasArrears)for(const cat of ["kas","air","sampah"])if(openingArrears[cat]>0)await setHouseholdArrearPeriod(id,row.period,cat,openingArrears[cat]);
+          await syncHouseholdBillingHistory(id);
           created++;
         }catch(err){failed.push(row.block+": "+err.message);}
       }
