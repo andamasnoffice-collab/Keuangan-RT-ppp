@@ -187,7 +187,9 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               const paidNow=useDeposit+useCash;
               if(paidNow>0){
                 const current=await read(`bills/${row.period}/${id}/air`)||{};
-                const remaining=Math.max(0,due-paidNow);
+                const currentRemaining=num(current.remaining??(Number(current.amount||0)-Number(current.paidAmount||0)));
+                if(currentRemaining!==due)throw new Error(`Sisa tagihan Air ${monthLabel(row.period)} berubah. Muat ulang data sebelum menyimpan.`);
+                const remaining=Math.max(0,currentRemaining-paidNow);
                 updates[`bills/${row.period}/${id}/air/paidAmount`]=num(current.paidAmount)+paidNow;
                 updates[`bills/${row.period}/${id}/air/remaining`]=remaining;
                 updates[`bills/${row.period}/${id}/air/status`]=remaining===0?"paid":"partial";
@@ -214,9 +216,9 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             items.push({cat:"air",cash:airCash,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
           }
           const totalCash=kasTotal+sampahTotal+airCash;
-          updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:monthKey,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:paymentPeriod,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const auditRef=push(ref(db,"audit_logs"));
-          updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:monthKey,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:paymentPeriod,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           await writeAndVerify(updates,[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]);
           for(const item of summaryDeltas)await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
           for(const cat of categories){
