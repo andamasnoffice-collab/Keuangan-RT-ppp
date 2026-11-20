@@ -136,6 +136,7 @@ export async function getMonthTransactions(period) {
   return await read(`transactionsByMonth/${period}`) || {};
 }
 const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const nextMonth = value => { const [y,m]=value.split("-").map(Number); const d=new Date(y,m,1); return String(d.getFullYear())+"-"+String(d.getMonth()+1).padStart(2,"0"); };
 const currentPeriodKey = () => { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`; };
 async function applyDepositToWaterBill(period,householdId,recordedBy){
   const [bill,deposit,balance]=await Promise.all([
@@ -186,9 +187,11 @@ export async function createMonthlyBills(period, recordedBy) {
   }
   let primaryCommitted=false;
   try {
-    const [homes,settings,existing,deposits,balances,advancePayments]=await Promise.all([
-      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances"),read("fixed_advance_payments")
+    const [homes,settings,existing,deposits,balances,advancePayments,allArrears]=await Promise.all([
+      getHouseholds(),getBillingSettings(),getMonthBills(period),read("deposits"),read("category_balances"),read("fixed_advance_payments"),read("arrearsLedger")
     ]);
+    const goLivePeriod=validPeriod(settings.goLivePeriod)?settings.goLivePeriod:period;
+    if(period<goLivePeriod) throw new Error("Periode tagihan tidak boleh sebelum titik awal pembukuan "+goLivePeriod+".");
     const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
     if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
     if(Object.keys(existing).length) throw new Error("Data tagihan periode ini sudah ada. Proses dihentikan agar tidak menimpa tagihan.");
@@ -196,6 +199,33 @@ export async function createMonthlyBills(period, recordedBy) {
     const now=Date.now();
     for(const [id,h] of active){
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
+      const arrearsStart=h.arrearsStartPeriod||{};
+      const legacyStart=h.openingArrearsPeriod||goLivePeriod;
+      const startFor=(cat)=>validPeriod(arrearsStart[cat])?arrearsStart[cat]:(h.openingArrearsRecorded&&validPeriod(legacyStart)&&Number(h.openingArrears?.[cat])>0?legacyStart:null);
+      for(const cat of ["kas","sampah"]){
+        const start=startFor(cat);
+        if(!start||start>=goLivePeriod)continue;
+        const rate=raw[cat];
+        if(rate<=0)continue;
+        for(let cursor=start;cursor<goLivePeriod&&cursor<period;cursor=nextMonth(cursor)){
+          const already=allArrears?.[id]?.[cursor]?.[cat];
+          if(already!==undefined&&already!==null)continue;
+          updates["bills/"+cursor+"/"+id+"/"+cat]={amount:rate,paidAmount:0,remaining:rate,status:"unpaid",openingArrears:true,createdAt:now};
+          updates["arrearsLedger/"+id+"/"+cursor+"/"+cat]=rate;
+        }
+      }
+      const airOpening=Math.max(0,Number(h.openingArrears?.air)||0);
+      if(airOpening>0&&!h.openingAirArrearsRecorded&&goLivePeriod<=period){
+        const prior=allArrears?.[id]?.[goLivePeriod]?.air;
+        if(prior===undefined||prior===null){
+          updates["arrearsLedger/"+id+"/"+goLivePeriod+"/air"]=airOpening;
+          updates["bills/"+goLivePeriod+"/"+id+"/air/openingArrears"]=airOpening;
+          updates["bills/"+goLivePeriod+"/"+id+"/air/amount"]=raw.air+airOpening;
+          updates["bills/"+goLivePeriod+"/"+id+"/air/remaining"]=raw.air+airOpening;
+          updates["bills/"+goLivePeriod+"/"+id+"/air/status"]="unpaid";
+          updates["households/"+id+"/openingAirArrearsRecorded"]=true;
+        }
+      }
       const fixedAdvance=advancePayments?.[id]?.[period]||{};
       const kasBillAmount=fixedAdvance.kas?Math.max(0,Number(fixedAdvance.kas.rate)||Number(fixedAdvance.kas.amount)||raw.kas):raw.kas;
       const sampahBillAmount=fixedAdvance.sampah?Math.max(0,Number(fixedAdvance.sampah.rate)||Number(fixedAdvance.sampah.amount)||raw.sampah):raw.sampah;
@@ -418,7 +448,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
 }
 
 export async function getBillingSettings() {
-  return await read("settings/billingRates") || { kasMonthly: 0, waterAdmin: 0, waterPerM3: 0, sampahMonthly: 0, updatedAt: null };
+  return await read("settings/billingRates") || { kasMonthly: 0, waterAdmin: 0, waterPerM3: 0, sampahMonthly: 0, goLivePeriod: new Date().toISOString().slice(0,7), updatedAt: null };
 }
 export async function saveBillingSettings(values) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
@@ -433,6 +463,7 @@ export async function saveBillingSettings(values) {
     waterAdmin: Math.max(0, Number(values.waterAdmin) || 0),
     waterPerM3: Math.max(0, Number(values.waterPerM3) || 0),
     sampahMonthly: Math.max(0, Number(values.sampahMonthly) || 0),
+    goLivePeriod: validPeriod(values.goLivePeriod) ? values.goLivePeriod : (previous.goLivePeriod || new Date().toISOString().slice(0,7)),
     openingBalances,
     updatedAt: Date.now()
   };
