@@ -12,6 +12,7 @@ const read=async path=>{const s=await get(root(path));return s.exists()?s.val():
 let parsed=null, households={}, recordedBy=null;
 
 function norm(v){return String(v??"").trim().toLowerCase().replace(/\s+/g," ");}
+async function ensureXLSX(){if(window.XLSX)return window.XLSX;await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";script.onload=resolve;script.onerror=()=>reject(new Error("Pustaka Excel gagal dimuat."));document.head.appendChild(script);});return window.XLSX;}
 function parseAmount(v){
   if(v===null||v===undefined||String(v).trim()==="")return 0;
   const n=Number(String(v).replace(/[^0-9,.-]/g,"").replace(/\.(?=\d{3}(?:\D|$))/g,"").replace(",","."));
@@ -59,8 +60,8 @@ function parseWorkbook(wb){
   return {arrears,deposits,cash,counts:{arrears:arrears.length,deposits:deposits.length,cash:cash.length}};
 }
 
-function downloadTemplate(){
-  const X=window.XLSX,wb=X.utils.book_new();
+async function downloadTemplate(){
+  const X=await ensureXLSX(),wb=X.utils.book_new();
   const sheets=[
     ["Tunggakan",[["Blok","Periode (YYYY-MM)","Kategori","Sisa Tunggakan (Rp)"],["A-01","2026-03","kas",30000],["A-01","2026-04","sampah",10000]]],
     ["Deposit",[["Blok","Kas RT (Rp)","Air (Rp)","Sampah (Rp)"],["A-01",0,50000,0]]],
@@ -89,8 +90,8 @@ async function renderMigration(c){
     if(!file)return;
     target.textContent="Membaca buku…";
     try{
-      if(!window.XLSX)await new Promise((resolve,reject)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";s.onload=resolve;s.onerror=()=>reject(new Error("Pustaka Excel gagal dimuat."));document.head.appendChild(s);});
-      const wb=window.XLSX.read(await file.arrayBuffer(),{type:"array"});
+      const X=await ensureXLSX();
+      const wb=X.read(await file.arrayBuffer(),{type:"array"});
       parsed=parseWorkbook(wb);
       const totals={kas:0,air:0,sampah:0};parsed.arrears.forEach(x=>totals[x.category]+=x.amount);
       const depositTotals={kas:0,air:0,sampah:0};parsed.deposits.forEach(x=>categories.forEach(cat=>depositTotals[cat]+=x.values[cat]));
