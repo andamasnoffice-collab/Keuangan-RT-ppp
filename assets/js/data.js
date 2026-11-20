@@ -228,8 +228,7 @@ export async function createMonthlyBills(period, recordedBy) {
         updates[`category_balances/${cat}`]={...balance,balance:(Number(balance.balance)||0)+depositSummary[cat],income:(Number(balance.income)||0)+depositSummary[cat],updatedAt:now};
       }
     }
-    updates[`billing_runs/${period}/status`]="completed";
-    updates[`billing_runs/${period}/completedAt`]=now;
+    updates[`billing_runs/${period}/status`]="processing";
     updates[`billing_runs/${period}/householdCount`]=active.length;
     updates[`billing_runs/${period}/rates`]={kasMonthly:Number(settings.kasMonthly)||0,sampahMonthly:Number(settings.sampahMonthly)||0,waterAdmin:Number(settings.waterAdmin)||0,waterPerM3:Number(settings.waterPerM3)||0};
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
@@ -255,6 +254,7 @@ export async function createMonthlyBills(period, recordedBy) {
         await retryIdempotent(()=>applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"}));
       }
     }
+    await update(lockRef,{status:"completed",completedAt:Date.now()});
     await refreshPublicSnapshotSafely();
     return {period,householdCount:active.length};
   } catch(error) {
@@ -327,7 +327,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
         }
       }else needsReview++;
     }
-    updates[`water_import_runs/${period}`]={status:"completed",period,completedAt:now,recordedBy:recordedBy||null,rowCount:rows.length,created,matched,meters,charges,needsReview};
+    updates[`water_import_runs/${period}`]={status:"processing",period,recordedBy:recordedBy||null,rowCount:rows.length,created,matched,meters,charges,needsReview};
     await writeAndVerify(updates,[`water_import_runs/${period}/status`]);
     primaryCommitted=true;
     for(const row of rows){
@@ -335,6 +335,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
       const house=byBlock.get(blockKey);
       if(house&&row.amount!==null&&row.amount!==undefined){await retryIdempotent(()=>setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0));await retryIdempotent(()=>applyDepositToWaterBill(period,house.id,recordedBy));}
     }
+    await update(lockRef,{status:"completed",completedAt:Date.now()});
     await refreshPublicSnapshotSafely();
     return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
   }catch(error){
