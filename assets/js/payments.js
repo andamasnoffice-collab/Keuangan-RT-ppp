@@ -1,5 +1,5 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
-import { buildPaymentJournal } from "./accounting.js";
+import { buildPaymentJournal, paymentRecognizedCash } from "./accounting.js";
 import { db } from "./firebase.js";
 import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
 
@@ -183,7 +183,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc=`Pelunasan ${labels[cat]} bulan ${monthLabel(item.period)}`;
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:cat,amount:currentRemaining,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-              summaryDeltas.push({id:txRef.key,category:cat,amount:currentRemaining,description:desc});
+              if(paymentRecognizedCash({cash:currentRemaining,applied:currentRemaining,advance:!!item.future})>0)summaryDeltas.push({id:txRef.key,category:cat,amount:currentRemaining,description:desc});
               totalApplied+=currentRemaining;
               items.push({cat,period:item.period,cash:currentRemaining,depositUsed:0,applied:currentRemaining,surplus:0,remaining:0,advance:!!item.future});
             }
@@ -192,7 +192,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             const amount=selected[cat].reduce((sum,item)=>sum+item.amount,0);
             if(amount>0){
               const balance=await read(`category_balances/${cat}`)||{};
-              updates[`category_balances/${cat}`]={...balance,balance:num(balance.balance)+amount,income:num(balance.income)+amount,updatedAt:timestamp};
+              const recognizedAmount=selected[cat].filter(item=>!item.future).reduce((sum,item)=>sum+paymentRecognizedCash({cash:item.amount,applied:item.amount}),0);
+              updates[`category_balances/${cat}`]={...balance,balance:num(balance.balance)+amount,income:num(balance.income)+recognizedAmount,updatedAt:timestamp};
             }
           }
           if(airGross>0||airCash>0||airDepositUsed>0){
@@ -229,14 +230,15 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
             }
             if(airCash>0){
               const balance=await read("category_balances/air")||{};
-              updates["category_balances/air"]={...balance,balance:num(balance.balance)+airCash,income:num(balance.income)+airCash,updatedAt:timestamp};
+              updates["category_balances/air"]={...balance,balance:num(balance.balance)+airCash,income:num(balance.income)+airApplied,updatedAt:timestamp};
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc="Penerimaan kas Air";
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:"air",amount:airCash,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-              summaryDeltas.push({id:txRef.key,category:"air",amount:airCash,description:desc});
+              const recognizedAirCash=paymentRecognizedCash({cash:airCash,applied:airApplied,cashApplied:airApplied});
+              if(recognizedAirCash>0)summaryDeltas.push({id:txRef.key,category:"air",amount:recognizedAirCash,description:desc});
             }
             totalDepositUsed+=airDepositUsed;totalSurplus+=airSurplus;
-            items.push({cat:"air",cash:airCash,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
+            items.push({cat:"air",cash:airCash,cashApplied:airApplied,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
           }
           const totalCash=kasTotal+sampahTotal+airCash;
           updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:paymentPeriod,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
