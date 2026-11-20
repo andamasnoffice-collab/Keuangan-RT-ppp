@@ -1,4 +1,4 @@
-import { ref, get, onValue, push, set, update, runTransaction, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
 
 const root = (path) => ref(db, path);
@@ -200,6 +200,7 @@ export async function migrateMonthlyIndexes(recordedBy) {
 }
 
 const validPeriod = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const currentPeriodKey = () => { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`; };
 async function applyDepositToWaterBill(period,householdId,recordedBy){
   const [bill,deposit,balance]=await Promise.all([
     read(`bills/${period}/${householdId}/air`),
@@ -315,6 +316,7 @@ export async function createMonthlyBills(period, recordedBy) {
         await applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"});
       }
     }
+    await refreshPublicSnapshotSafely();
     return {period,householdCount:active.length};
   } catch(error) {
     await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
@@ -392,6 +394,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
       const house=byBlock.get(blockKey);
       if(house&&row.amount!==null&&row.amount!==undefined){await setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0);await applyDepositToWaterBill(period,house.id,recordedBy);}
     }
+    await refreshPublicSnapshotSafely();
     return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
   }catch(error){
     await set(lockRef,{status:"failed",failedAt:Date.now(),recordedBy:recordedBy||null,error:String(error.message||error)});
@@ -424,6 +427,7 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
   await applyDepositToWaterBill(period,householdId,recordedBy);
+  await refreshPublicSnapshotSafely();
   return reading;
 }
 
@@ -458,6 +462,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
   await setHouseholdArrearPeriod(householdId,period,"air",remaining);
   await applyDepositToWaterBill(period,householdId,recordedBy);
+  await refreshPublicSnapshotSafely();
   return reading;
 }
 
@@ -497,6 +502,7 @@ export async function saveBillingSettings(values) {
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"opening_balances_updated", openingBalances, createdAt:Date.now()};
   await update(ref(db), updates);
+  await refreshPublicSnapshotSafely();
   return clean;
 }
 
@@ -525,6 +531,7 @@ export async function createExpense({category, amount, date, description, proof,
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
   await writeAndVerify(updates,[`expensesByMonth/${period}/${expenseRef.key}`,`transactionsByMonth/${period}/${txRef.key}`,`category_balances/${category}`]);
   await applyMonthlySummaryDelta(period,expenseRef.key,{type:"expense",category,amount:value,date:record.date,description:record.description});
+  await refreshPublicSnapshotSafely();
   return record;
 }
 
@@ -651,6 +658,11 @@ export async function refreshPublicSnapshot(currentPeriod, householdsOverride=nu
   return await publishPublicSnapshot(currentPeriod,homes||{},balances||{},financeSummary||{},arrearsSummary||{},arrearsLedger||{});
 }
 
+export async function refreshPublicSnapshotSafely() {
+  try { await refreshPublicSnapshot(currentPeriodKey()); return true; }
+  catch(error) { console.error("Sinkronisasi tampilan publik tertunda:",error); return false; }
+}
+
 const MASTER_DATA_NODES=["households","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
 export async function deleteMasterData({mode,period,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
@@ -660,6 +672,7 @@ export async function deleteMasterData({mode,period,recordedBy}) {
     const log=push(root("audit_logs"));
     updates[`audit_logs/${log.key}`]={type:"master_data_deleted_all",recordedBy:recordedBy||null,createdAt:stamp,retainedAuditLog:true};
     await update(ref(db),updates);
+    await refreshPublicSnapshotSafely();
     return {mode:"all",deletedNodes:MASTER_DATA_NODES.length};
   }
   if(mode!=="period"||!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period||""))) throw new Error("Pilih periode yang valid.");
@@ -696,5 +709,6 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   const log=push(root("audit_logs"));
   updates[`audit_logs/${log.key}`]={type:"master_data_deleted_period",period:p,recordedBy:recordedBy||null,createdAt:stamp};
   await update(ref(db),updates);
+  await refreshPublicSnapshotSafely();
   return {mode:"period",period:p,ledgerHouseholds:Object.keys(ledgers).filter(id=>!!ledgers[id]?.[p]).length};
 }
