@@ -191,7 +191,12 @@ export async function syncHouseholdBillingHistory(householdId) {
       const existingLedger=ledger?.[period]?.[cat];
       const existingBill=await read("bills/"+period+"/"+householdId+"/"+cat);
       if(existingLedger!==undefined&&existingLedger!==null) continue;
-      if(existingBill) continue;
+      if(existingBill){
+        const remaining=Math.max(0,Number(existingBill.remaining??(Number(existingBill.amount||0)-Number(existingBill.paidAmount||0)))||0);
+        updates["arrearsLedger/"+householdId+"/"+period+"/"+cat]=remaining;
+        created++;
+        continue;
+      }
       updates["bills/"+period+"/"+householdId+"/"+cat]={amount:rates[cat],paidAmount:0,remaining:rates[cat],status:"unpaid",openingArrears:true,createdAt:now,source:"household_start_period_sync"};
       updates["arrearsLedger/"+householdId+"/"+period+"/"+cat]=rates[cat];
       const journal=buildOpeningJournal({id:"opening_arrears_"+householdId+"_"+period+"_"+cat,period:goLive,date:goLive+"-01",cash:{},receivables:{[cat]:rates[cat]},deposits:{},createdAt:now});
