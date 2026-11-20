@@ -636,8 +636,6 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   if(mode!=="period"||!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period||""))) throw new Error("Pilih periode yang valid.");
   const p=period,year=Number(p.slice(0,4));
   for(const node of ["bills","paymentsByMonth","expensesByMonth","transactionsByMonth","water_readings","financeSummaryByMonth","billing_runs","water_import_runs"]) updates[`${node}/${p}`]=null;
-  const allAdvances=await read("fixed_advance_payments")||{};
-  for(const [houseId,periodRows] of Object.entries(allAdvances))if(periodRows?.[p])updates[`fixed_advance_payments/${houseId}/${p}`]=null;
   const periodOf=row=>{
     const raw=row?.date||row?.period||row?.createdAt||row?.timestamp;
     if(typeof raw==="number")return new Date(raw).toISOString().slice(0,7);
