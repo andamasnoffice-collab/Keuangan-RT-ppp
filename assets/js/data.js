@@ -583,7 +583,7 @@ export async function saveBillingSettings(values) {
   if(oldGoLive!==goLivePeriod)updates["journal_entries/opening_balance_"+oldGoLive]=null;
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"opening_balances_updated",openingBalances,goLivePeriod,openingDeposits,createdAt:Date.now()};
-  await writeAndVerify(updates,[`settings/billingRates`,`journal_entries/${openingId}`]);
+  await writeAndVerify(updates,[`settings/billingRates`]);
   await refreshPublicSnapshotSafely();
   return clean;
 }
@@ -706,33 +706,34 @@ export async function getPublicBills() {
 export async function buildAnnualSummary(year, recordedBy=null) {
   const y=Number(year);
   if(!Number.isInteger(y)||y<2000||y>new Date().getFullYear()) throw new Error("Tahun rekap tidak valid.");
-  const periods=Array.from({length:12},(_,i)=>`${y}-${String(i+1).padStart(2,"0")}`);
-  const [monthly,allMonthly,settings,balances,deposits,arrears]=await Promise.all([
-    Promise.all(periods.map(p=>read(`financeSummaryByMonth/${p}`))),
-    read("financeSummaryByMonth"),
-    getBillingSettings(),
-    read("category_balances"),
-    read("deposits"),
-    read("arrearsSummary")
+  const [settings,allMonthly,balances,deposits,arrears]=await Promise.all([
+    getBillingSettings(),read("financeSummaryByMonth"),read("category_balances"),read("deposits"),read("arrearsSummary")
   ]);
+  const goLive=validPeriod(settings?.goLivePeriod)?settings.goLivePeriod:`${y}-01`;
+  const yearStart=`${y}-01`,periodStart=goLive>yearStart?goLive:yearStart;
+  if(periodStart.slice(0,4)!==String(y))throw new Error("Tahun ini berada sebelum bulan mulai aplikasi.");
+  const currentPeriod=monthKey();
+  const periodEnd=`${y}-12`<currentPeriod?`${y}-12`:currentPeriod;
+  const periods=[];
+  for(let p=periodStart;p<=periodEnd;p=nextMonth(p))periods.push(p);
   const categories=["kas","sampah","air"],byCategory={};
   for(const cat of categories){
     const baseOpening=Number(balances?.[cat]?.openingBalance ?? settings?.openingBalances?.[cat])||0;
-    const netBeforeYear=Object.entries(allMonthly||{}).filter(([period])=>period<`${y}-01`).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0)-(Number(row?.byCategory?.[cat]?.expenses)||0),0);
+    const netBeforeYear=Object.entries(allMonthly||{}).filter(([period])=>period>=goLive&&period<yearStart).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0)-(Number(row?.byCategory?.[cat]?.expenses)||0),0);
     const opening=baseOpening+netBeforeYear;
     let income=0,expense=0;
-    monthly.forEach((row,index)=>{
-      const item=row?.byCategory?.[cat]||{};
-      const inc=Math.max(0,Number(item.income)||0),out=Math.max(0,Number(item.expenses)||0);
-      income+=inc;expense+=out;
-     });
+    for(const period of periods){
+      const item=allMonthly?.[period]?.byCategory?.[cat]||{};
+      income+=Math.max(0,Number(item.income)||0);
+      expense+=Math.max(0,Number(item.expenses)||0);
+    }
     const deposit=Object.values(deposits||{}).reduce((sum,row)=>sum+(Number(row?.[cat])||0),0);
     byCategory[cat]={openingBalance:opening,income,expenses:expense,closingOperatingBalance:opening+income-expense,depositLiability:deposit};
   }
   const arrearsTotals={kas:0,sampah:0,air:0,total:0};
-  for(const row of Object.values(arrears||{})) for(const cat of categories) arrearsTotals[cat]+=Math.max(0,Number(row?.[cat])||0);
+  for(const row of Object.values(arrears||{}))for(const cat of categories)arrearsTotals[cat]+=Math.max(0,Number(row?.[cat])||0);
   arrearsTotals.total=categories.reduce((sum,cat)=>sum+arrearsTotals[cat],0);
-  const payload={year:y,periodStart:periods[0],periodEnd:periods[11],byCategory,arrearsAtSnapshot:arrearsTotals,operatingBalanceAtSnapshot:categories.reduce((sum,cat)=>sum+(Number(balances?.[cat]?.balance)||0),0),depositLiabilityAtSnapshot:categories.reduce((sum,cat)=>sum+byCategory[cat].depositLiability,0),generatedAt:Date.now(),generatedBy:recordedBy||null,version:1};
+  const payload={year:y,periodStart,periodEnd,byCategory,arrearsAtSnapshot:arrearsTotals,operatingBalanceAtSnapshot:categories.reduce((sum,cat)=>sum+(Number(balances?.[cat]?.balance)||0),0),depositLiabilityAtSnapshot:categories.reduce((sum,cat)=>sum+byCategory[cat].depositLiability,0),generatedAt:Date.now(),generatedBy:recordedBy||null,version:2};
   await writeAndVerify({[`annual_summaries/${y}`]:payload},[`annual_summaries/${y}`]);
   return payload;
 }
