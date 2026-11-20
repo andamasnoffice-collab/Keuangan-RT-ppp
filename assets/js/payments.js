@@ -144,7 +144,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
       fixedCategories.forEach(updateFixed);calculate();
       box.querySelector("#savePayment").addEventListener("click",async()=>{
         const button=box.querySelector("#savePayment");
-        const selected=Object.fromEntries(fixedCategories.map(cat=>[cat,getSelected(cat).map(c=>({period:c.dataset.period,amount:num(c.dataset.amount)}))]));
+        const selected=Object.fromEntries(fixedCategories.map(cat=>[cat,getSelected(cat).map(c=>({period:c.dataset.period,amount:num(c.dataset.amount),future:c.dataset.future==="true"}))]));
         const kasTotal=selected.kas.reduce((s,x)=>s+x.amount,0),sampahTotal=selected.sampah.reduce((s,x)=>s+x.amount,0);
         const airCash=parseRupiah(airInput.value),airApplied=Math.min(airCash,Math.max(0,airGross-airDepositUsed)),airSurplus=Math.max(0,airCash-airApplied);
         if(!kasTotal&&!sampahTotal&&!airDepositUsed&&!airCash){toast("Centang bulan Kas RT/Sampah atau isi pembayaran Air terlebih dahulu.");return;}
@@ -162,14 +162,23 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           for(const cat of fixedCategories){
             const chosen=selected[cat];
             for(const item of chosen){
-              const current=await read(`bills/${item.period}/${id}/${cat}`)||{};
-              const currentRemaining=num(current.remaining??item.amount);
-              if(currentRemaining<=0)throw new Error(`Tagihan ${labels[cat]} ${monthLabel(item.period)} sudah lunas. Muat ulang data sebelum menyimpan.`);
-              if(currentRemaining!==item.amount)throw new Error(`Nominal tagihan ${labels[cat]} ${monthLabel(item.period)} berubah. Muat ulang data sebelum menyimpan.`);
-              updates[`bills/${item.period}/${id}/${cat}/paidAmount`]=num(current.paidAmount)+currentRemaining;
-              updates[`bills/${item.period}/${id}/${cat}/remaining`]=0;
-              updates[`bills/${item.period}/${id}/${cat}/status`]="paid";
-              updates[`arrearsLedger/${id}/${item.period}/${cat}`]=0;
+              let currentRemaining=item.amount;
+              if(item.future){
+                const [existingAdvance,latestSettings]=await Promise.all([read(`fixed_advance_payments/${id}/${item.period}/${cat}`),getBillingSettings()]);
+                if(existingAdvance)throw new Error(`Pembayaran di muka ${labels[cat]} ${monthLabel(item.period)} sudah tercatat. Muat ulang data.`);
+                const latestRate=num(cat==="kas"?latestSettings.kasMonthly:latestSettings.sampahMonthly);
+                if(latestRate!==item.amount)throw new Error(`Tarif ${labels[cat]} berubah. Muat ulang daftar pembayaran sebelum menyimpan.`);
+                updates[`fixed_advance_payments/${id}/${item.period}/${cat}`]={amount:latestRate,rate:latestRate,paymentId:paymentRef.key,paidAt:timestamp,date,recordedBy:currentUser?.uid||null,status:"paid"};
+              }else{
+                const current=await read(`bills/${item.period}/${id}/${cat}`)||{};
+                currentRemaining=num(current.remaining??item.amount);
+                if(currentRemaining<=0)throw new Error(`Tagihan ${labels[cat]} ${monthLabel(item.period)} sudah lunas. Muat ulang data sebelum menyimpan.`);
+                if(currentRemaining!==item.amount)throw new Error(`Nominal tagihan ${labels[cat]} ${monthLabel(item.period)} berubah. Muat ulang data sebelum menyimpan.`);
+                updates[`bills/${item.period}/${id}/${cat}/paidAmount`]=num(current.paidAmount)+currentRemaining;
+                updates[`bills/${item.period}/${id}/${cat}/remaining`]=0;
+                updates[`bills/${item.period}/${id}/${cat}/status`]="paid";
+                updates[`arrearsLedger/${id}/${item.period}/${cat}`]=0;
+              }
               const txRef=push(ref(db,`transactionsByMonth/${paymentPeriod}`));
               const desc=`Pelunasan ${labels[cat]} bulan ${monthLabel(item.period)}`;
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:cat,amount:currentRemaining,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
