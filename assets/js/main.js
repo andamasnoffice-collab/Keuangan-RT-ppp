@@ -4,7 +4,7 @@ import { login, logout, observeSession, reauthenticate } from "./auth.js";
 import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
 import { renderPaymentPage } from "./payments.js?v=20261120-audit8";
 import { renderWhatsAppPage } from "./whatsapp.js";
-import { renderOpeningMigration } from "./migration.js?v=20261120-migration1";
+import { renderOpeningMigration } from "./migration.js?v=20261120-migration2";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
