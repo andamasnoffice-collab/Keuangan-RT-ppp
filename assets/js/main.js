@@ -1,9 +1,10 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit8";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
 import { renderPaymentPage } from "./payments.js?v=20261120-audit8";
 import { renderWhatsAppPage } from "./whatsapp.js";
+import { renderOpeningMigration } from "./migration.js?v=20261120-migration1";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
@@ -132,7 +133,7 @@ function card(label,value,sub=""){return `<div class="stat"><div class="label">$
 function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
-  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",settings:"Pengaturan",masterData:"Master Data"};
+  const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",settings:"Pengaturan",masterData:"Master Data",openingMigration:"Migrasi Pembukuan"};
   title(names[page]||"Dashboard");
   const c=$("#pageContent");
   c.innerHTML='<div class="panel">Memuat data…</div>';
@@ -152,6 +153,7 @@ async function render(){
     else if(page==="whatsapp") await renderWhatsAppPage(c,{households,currentUser,currentProfile,toast});
     else if(page==="settings") await renderSettings(c);
     else if(page==="masterData") renderMasterData(c);
+    else if(page==="openingMigration") await renderOpeningMigration(c,households,currentUser?.uid);
   }catch(e){c.innerHTML=`<div class="muted-note">Gagal memuat data: ${e.message}</div>`;}
 }
 async function renderSettings(c){
