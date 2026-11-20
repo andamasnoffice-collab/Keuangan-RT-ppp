@@ -48,7 +48,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         const currentRate=Number(cat==="kas"?settings.kasMonthly:settings.sampahMonthly)||0;
         const lockedRate=Number(advance?.rate)||currentRate;
         const amount=hasBill?num(row.categories[cat]):future?Math.max(0,lockedRate-num(advance?.amount)):0;
-        return {...row,billExists:hasBill||future,sequence:hasBill||future||row.period<=currentPeriod,future,advance,amount,paid:hasBill?num(row.categories[cat])===0:!!advance&&num(advance.amount)>=lockedRate};
+        return {...row,billExists:hasBill||future,sequence:hasBill||future,future,advance,amount,paid:hasBill?num(row.categories[cat])===0:!!advance&&num(advance.amount)>=lockedRate};
       })]));
       const airRows=rowsFor("air");
       const airGross=airRows.reduce((sum,row)=>sum+num(row.categories.air),0);
