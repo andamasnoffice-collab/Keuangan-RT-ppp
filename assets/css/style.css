@@ -572,3 +572,5 @@ td{color:var(--text)}
 .pay-month-row small{font-size:10px;line-height:1.1;}
 @media(max-width:900px){.payment-month-checklist{grid-template-columns:repeat(3,minmax(0,1fr));}}
 @media(max-width:600px){.payment-month-checklist{grid-template-columns:repeat(3,minmax(0,1fr));}.pay-month-row{min-height:54px;padding:7px 3px;}}
+
+.pay-month-row.is-waived{border-color:color-mix(in srgb,var(--amber) 45%,var(--line));background:color-mix(in srgb,var(--amber) 9%,var(--surface));}
