@@ -9,3 +9,5 @@
 - Setiap akun login memiliki hak pengelolaan sama.
 
 Peringatan: public_views benar-benar publik dan dapat dibaca siapa saja yang mengetahui URL database. Periksa Rules Simulator sebelum deploy.
+
+- `fixed_advance_payments`: hanya pengguna terautentikasi yang dapat membaca/menulis catatan pembayaran di muka Kas RT dan Sampah.
