@@ -355,7 +355,7 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   const admin=Number(existing.adminAmount??bill?.adminAmount??settings.waterAdmin)||0;
   const usageAmount=Math.round(usage*rate),total=admin+usageAmount;
   const paid=Number(baseBill.paidAmount)||0,remaining=Math.max(0,total-paid),timestamp=Date.now();
-  const reading={...existing,period,householdId,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,totalAmount:total,recordedBy:recordedBy||null,updatedAt:timestamp};
+  const reading={...existing,period,householdId,previousMeter:previous,currentMeter:value,usage,rate,adminAmount:admin,usageAmount,totalAmount:total,amountNeedsReview:false,recordedBy:recordedBy||null,updatedAt:timestamp};
   const updates={};
   updates[`water_readings/${period}/${householdId}`]=reading;
   updates[`households/${householdId}/currentWaterMeter`]=value;
