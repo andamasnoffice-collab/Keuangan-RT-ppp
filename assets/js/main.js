@@ -689,7 +689,7 @@ async function renderCategory(c,cat){
   const ledger=`<section class="panel monthly-ledger">
     <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Ringkasan pemasukan, pengeluaran, dan saldo berjalan per bulan</p></div><span class="pill">Januari–Desember</span></div>
     <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows}<tr class="ledger-total"><td><b>Akumulasi tahun ini</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
-    <p class="tiny muted ledger-note">Saldo awal Januari mengikuti saldo awal yang tercatat pada Pengaturan. Saldo akhir setiap bulan dihitung dari saldo awal + pemasukan − pengeluaran. Bulan mendatang akan bernilai Rp 0 sampai ada mutasi.</p>
+    <p class="tiny muted ledger-note">Saldo awal Januari dihitung dari saldo operasional saat ini dikurangi mutasi bersih tahun berjalan. Saldo akhir setiap bulan dihitung dari saldo awal + pemasukan − pengeluaran.</p>
   </section>`;
   c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit warga ditampilkan terpisah dan tidak dijumlahkan sebagai pemasukan operasional.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
@@ -729,7 +729,7 @@ async function renderExpenses(c){
 
 function renderMasterData(c){
   c.innerHTML=`<div class="grid two">
-    <section class="panel"><h3>Hapus data berdasarkan periode</h3><p class="muted">Menghapus tagihan, pembayaran, pengeluaran, transaksi, meter air, ringkasan, dan rincian tunggakan pada satu bulan. Data rumah, tarif, saldo kategori dan periode lain dipertahankan.</p>
+    <section class="panel"><h3>Hapus data berdasarkan periode</h3><p class="muted">Menghapus transaksi periode terpilih, mengembalikan mutasi deposit pada periode itu, menghitung ulang saldo kategori dari seluruh mutasi tersisa, memperbarui tunggakan, dan membatalkan rekap tahunan dari tahun tersebut ke atas. Data rumah, tarif, serta transaksi periode lain dipertahankan.</p>
       <label class="field">Pilih periode<input id="masterDeletePeriod" type="month" value="${monthKey()}"></label>
       <button class="btn danger" id="deletePeriodBtn" type="button">Hapus data periode</button>
     </section>
