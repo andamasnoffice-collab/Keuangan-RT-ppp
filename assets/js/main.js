@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, createRecord, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary } from "./data.js?v=20261119-deposit-air-only1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261119-deposit-air-only1";
 import { renderPaymentPage } from "./payments.js?v=20261119-checklist12m3";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -540,6 +540,7 @@ function houseDialog(existing=null){
     if(existing)data.id=existing.id;
     const id=await saveHousehold(data);
     if(shouldRecordOpeningArrears){for(const cat of ["kas","air","sampah"])if(openingArrears[cat]>0)await setHouseholdArrearPeriod(id,openingArrearsPeriod,cat,openingArrears[cat]);}
+    await refreshPublicSnapshotSafely();
     households=await getHouseholds();householdsLoadedAt=Date.now();$("#genericDialog").close();toast(editing?"Perubahan rumah tersimpan.":"Data rumah dan tunggakan awal tersimpan.");await render();
   });
 }
@@ -648,10 +649,9 @@ async function renderWaterMeters(c){
   });
 }
 async function renderCategory(c,cat){
-  const [bal,monthly,settings,depositRows]=await Promise.all([
+  const [bal,monthly,depositRows]=await Promise.all([
     read(`category_balances/${cat}`),
     read("financeSummaryByMonth"),
-    read("settings/billingRates"),
     read("deposits")
   ]);
   const [arrearsLedger]=await Promise.all([read("arrearsLedger")]);
@@ -668,8 +668,11 @@ async function renderCategory(c,cat){
   const due=Object.values(monthDue).reduce((sum,n)=>sum+n,0);
   const dueRows=Object.entries(monthDue).sort(([a],[b])=>a.localeCompare(b));
   const labels={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
-  const opening=Number(settings?.openingBalances?.[cat])||0;
   const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const yearPrefix=`${year}-`;
+  const yearIncome=Object.entries(monthly||{}).filter(([key])=>key.startsWith(yearPrefix)).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0),0);
+  const yearExpenses=Object.entries(monthly||{}).filter(([key])=>key.startsWith(yearPrefix)).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.expenses)||0),0);
+  const opening=(Number(balance.balance)||0)-yearIncome+yearExpenses;
   let running=opening,totalIn=0,totalOut=0;
   const rows=monthNames.map((name,index)=>{
     const key=`${year}-${String(index+1).padStart(2,"0")}`;
