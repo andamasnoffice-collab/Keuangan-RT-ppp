@@ -75,7 +75,9 @@ async function downloadTemplate(){
 async function renderMigration(c){
   const projectId=db?.app?.options?.projectId||"";
   const production=projectId==="keuangan-rt-ppp";
-  const marker=await read("opening_migrations/2026-10");
+  let marker=null, markerReadable=true;
+  try { marker=await read("opening_migrations/2026-10"); }
+  catch(error) { markerReadable=false; console.warn("Migration lock unreadable; preview-only mode.",error); }
   c.innerHTML=`<section class="panel">
     <div class="section-head" style="margin-top:0"><div><h3>Migrasi pembukuan manual</h3><p class="tiny muted">Saldo pembuka per 31 Oktober 2026 · aplikasi mulai mencatat November 2026</p></div><span class="pill ${marker?.status==="completed"?"success":"warning"}">${marker?.status==="completed"?"Sudah dimigrasikan":"Belum dimigrasikan"}</span></div>
     <div class="muted-note">Gunakan buku manual untuk memindahkan sisa tunggakan per bulan, deposit warga, dan saldo kas operasional. Pembayaran yang sudah lunas tidak dimasukkan sebagai tunggakan.</div>
@@ -100,8 +102,8 @@ async function renderMigration(c){
       <h4>Deposit warga (tetap terpisah)</h4><p>Kas RT: ${money(depositTotals.kas)} · Air: ${money(depositTotals.air)} · Sampah: ${money(depositTotals.sampah)}</p>
       <h4>Saldo kas pembuka</h4><p>${parsed.cash.map(x=>labels[x.category]+": "+money(x.amount)).join(" · ")||"Tidak diisi"}</p>
       <p class="tiny muted">Data tunggakan per bulan: ${parsed.arrears.slice(0,8).map(x=>escapeHtml(x.block+" / "+x.period+" / "+x.category+" / "+money(x.amount))).join("<br>")}${parsed.arrears.length>8?"<br>… dan "+(parsed.arrears.length-8)+" baris lainnya":""}</p>
-      <button id="confirmMigration" class="btn primary" ${production||marker?.status==="completed"?"disabled":""}>Sahkan migrasi saldo awal</button></div>`;
-      if(!production&&marker?.status!=="completed")$("#confirmMigration").addEventListener("click",()=>saveMigration().catch(err=>{const p=$("#migrationPreview");p.insertAdjacentHTML("beforeend",`<p class="error">${escapeHtml(err.message)}</p>`);}));
+      <button id="confirmMigration" class="btn primary" ${production||!markerReadable||marker?.status==="completed"?"disabled":""}>Sahkan migrasi saldo awal</button></div>`;
+      if(!production&&markerReadable&&marker?.status!=="completed")$("#confirmMigration").addEventListener("click",()=>saveMigration().catch(err=>{const p=$("#migrationPreview");p.insertAdjacentHTML("beforeend",`<p class="error">${escapeHtml(err.message)}</p>`);}));
     }catch(err){parsed=null;target.textContent="File tidak dapat diproses: "+err.message;}
   });
 }
