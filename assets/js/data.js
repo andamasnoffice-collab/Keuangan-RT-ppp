@@ -2,6 +2,10 @@ import { ref, get, onValue, push, set, update, runTransaction } from "https://ww
 import { db } from "./firebase.js";
 
 const root = (path) => ref(db, path);
+async function retryIdempotent(operation) {
+  try { return await operation(); }
+  catch(firstError) { try { return await operation(); } catch(secondError) { secondError.cause=firstError; throw secondError; } }
+}
 export async function assertDatabaseOnline() {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   // Do not call get() on the reserved .info/connected path. Read requests
@@ -162,8 +166,8 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
     "category_balances/air":{...(balance||{}),balance:(Number(balance?.balance)||0)+use,income:(Number(balance?.income)||0)+use,updatedAt:now}
   };
   await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`,`category_balances/air`]);
-  await applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"});
-  await setHouseholdArrearPeriod(householdId,period,"air",remaining);
+  await retryIdempotent(()=>applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"}));
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   return use;
 }
 
@@ -238,16 +242,17 @@ export async function createMonthlyBills(period, recordedBy) {
     await writeAndVerify(updates,verifyPaths);
     primaryCommitted=true;
     for(const [id,row] of active.map(([id])=>[id,updates[`bills/${period}/${id}`]])){
-      await setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining);
-      await setHouseholdArrearPeriod(id,period,"air",row.air.remaining);
-      await setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining);
+      await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining));
+      await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"air",row.air.remaining));
+      await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"sampah",row.sampah.remaining));
     }
     for(const cat of ["air"]){
       if(depositSummary[cat]>0){
         const txRef=push(root(`transactionsByMonth/${period}`));
         const summaryId=txRef.key;
-        await set(txRef,{id:summaryId,type:"payment",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga",recordedBy:recordedBy||null,createdAt:now});
-        await applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"});
+        const txRecord={id:summaryId,type:"payment",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga",recordedBy:recordedBy||null,createdAt:now};
+        await retryIdempotent(()=>set(txRef,txRecord));
+        await retryIdempotent(()=>applyMonthlySummaryDelta(period,summaryId,{type:"income",category:cat,amount:depositSummary[cat],date:period+"-01",description:"Pelunasan otomatis menggunakan deposit warga"}));
       }
     }
     await refreshPublicSnapshotSafely();
@@ -328,7 +333,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     for(const row of rows){
       const blockKey=norm(row.block);
       const house=byBlock.get(blockKey);
-      if(house&&row.amount!==null&&row.amount!==undefined){await setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0);await applyDepositToWaterBill(period,house.id,recordedBy);}
+      if(house&&row.amount!==null&&row.amount!==undefined){await retryIdempotent(()=>setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0));await retryIdempotent(()=>applyDepositToWaterBill(period,house.id,recordedBy));}
     }
     await refreshPublicSnapshotSafely();
     return {period,rowCount:rows.length,created,matched,meters,charges,needsReview};
@@ -365,8 +370,8 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_corrected",period,householdId,previousMeter:previous,oldCurrentMeter:existing.currentMeter,newCurrentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
-  await setHouseholdArrearPeriod(householdId,period,"air",remaining);
-  await applyDepositToWaterBill(period,householdId,recordedBy);
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
   await refreshPublicSnapshotSafely();
   return reading;
 }
