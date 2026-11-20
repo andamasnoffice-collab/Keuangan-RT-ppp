@@ -333,6 +333,8 @@ export async function importWaterStatement({period,rows,recordedBy}) {
           const air={amount,adminAmount:null,usage,previousMeter:previous,currentMeter:current,paidAmount:0,remaining:amount,status:amount>0?"unpaid":"paid",createdAt:now,source:"imported_statement"};
           updates[`bills/${period}/${house.id}/air`]=air;
           updates[`arrearsLedger/${house.id}/${period}/air`]=amount;
+          const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+house.id+"_air",period,date:period+"-01",householdId:house.id,category:"air",amount,createdAt:now});
+          if(invoice)updates["journal_entries/"+invoice.id]=invoice;
           charges++;
         }else needsReview++;
         if(hasMeters){
