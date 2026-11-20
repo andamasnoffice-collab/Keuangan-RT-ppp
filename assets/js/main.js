@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, publishPublicSnapshot, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit1";
 import { renderPaymentPage } from "./payments.js?v=20261120-audit1";
 import { renderWhatsAppPage } from "./whatsapp.js";
 
@@ -177,7 +177,7 @@ async function renderSettings(c){
       <span id="settingsSavedAt" class="muted tiny" style="margin-left:10px">${settings.updatedAt?`Terakhir diubah: ${new Date(settings.updatedAt).toLocaleString("id-ID")}`:"Belum pernah disimpan"}</span>
       </form>
     </div>
-    <div class="muted-note" style="margin-top:14px">Catatan: perubahan tarif tidak boleh menimpa tagihan bulan yang sudah terbentuk. Pengaturan ini menyimpan tarif ke Firebase; proses pembentukan tagihan bulanan otomatis dan pencatatan meter air merupakan tahap implementasi terpisah.</div>`;
+    <div class="muted-note" style="margin-top:14px">Catatan: perubahan tarif tidak boleh menimpa tagihan bulan yang sudah terbentuk. Pengaturan ini menyimpan tarif ke Firebase; tagihan dibuat satu kali secara manual dari Dashboard, sedangkan pencatatan dan koreksi meter tersedia pada tab Meteran Air.</div>`;
   bindRupiahInputs($("#billingSettingsForm"));
   $("#billingSettingsForm").addEventListener("submit",async e=>{
     e.preventDefault(); const f=new FormData(e.currentTarget);
@@ -360,12 +360,14 @@ async function renderDashboard(c){
     }
   });
   $("#publishPublicBtn").addEventListener("click", async ()=>{
+    const button=$("#publishPublicBtn");
+    button.disabled=true;button.textContent="Memperbarui…";
     try{
-      const [financeSummary,arrearsSummary,arrearsLedger]=await Promise.all([read("financeSummaryByMonth"),read("arrearsSummary"),read("arrearsLedger")]);
-      const currentAnnouncement=await read("public_views/announcement");
-      await publishPublicSnapshot(monthKey(),households,balances,financeSummary||{},arrearsSummary||{},arrearsLedger||{},currentAnnouncement||null);
-      toast("Informasi publik berhasil diperbarui.");
+      const synced=await refreshPublicSnapshotSafely();
+      if(!synced)throw new Error("Snapshot belum berhasil ditulis. Coba ulang setelah koneksi Firebase stabil.");
+      toast("Dashboard dan daftar tagihan publik berhasil diperbarui.");
     }catch(e){toast("Gagal memperbarui tampilan publik: "+e.message);}
+    finally{button.disabled=false;button.textContent="Perbarui Daftar Tagihan Publik";}
   });
 }
 function renderHouseholds(c){
@@ -575,7 +577,7 @@ function normalizeWaterImportRows(matrix){
   if(!matrix.length)return [];
   const headers=matrix[0].map(v=>String(v??"").trim().toLowerCase());
   const find=patterns=>headers.findIndex(h=>patterns.some(p=>h.includes(p)));
-  const ix={block:find(["blok","no. rumah"]),name:find(["nama kepala","nama"]),previous:find(["meter september","meteran september","meter awal"]),current:find(["meter oktober","meteran oktober","meter akhir"]),usage:find(["pemakaian","jml"]),amount:find(["tagihan oktober","tagihan air","nominal tagihan","tagihan (rp)"])};
+  const ix={block:find(["blok","no. rumah"]),name:find(["nama kepala","nama"]),previous:find(["meter awal","meter sebelumnya","meter september","meteran september"]),current:find(["meter akhir","meter sekarang","meter oktober","meteran oktober"]),usage:find(["pemakaian","jml"]),amount:find(["tagihan oktober","tagihan air","nominal tagihan","tagihan (rp)"])};
   if(ix.block<0)throw new Error("Kolom Blok tidak ditemukan. Gunakan file template impor Keuangan RT.");
   return matrix.slice(1).filter(r=>String(r[ix.block]??"").trim()).map(r=>{
     const num=i=>{if(i<0||r[i]===undefined||r[i]===null||String(r[i]).trim()==="")return null;const v=Number(String(r[i]).replace(/[^0-9,-]/g,"").replace(",", "."));return Number.isFinite(v)?v:null;};
@@ -593,10 +595,10 @@ async function renderWaterMeters(c){
     <div id="waterImportPanel" class="muted-note hidden">
       <form id="waterImportForm">
         <div class="form-grid">
-          <label class="field">Periode data<input type="month" name="period" value="2026-10" required></label>
+          <label class="field">Periode data<input type="month" name="period" value="${period}" required></label>
           <label class="field">Pilih file Excel / CSV<input type="file" id="waterImportFile" accept=".xlsx,.xls,.csv" required></label>
         </div>
-        <p class="muted tiny">Kolom yang dikenali: Blok, Nama Kepala Keluarga, Meter September, Meter Oktober, Pemakaian, dan Tagihan Oktober (Rp).</p>
+        <p class="muted tiny">Kolom yang dikenali: Blok, Nama Kepala Keluarga, Meter Awal, Meter Akhir, Pemakaian, dan Tagihan (Rp). Format lama dengan nama bulan juga didukung.</p>
         <div id="waterImportPreview"></div>
         <button class="btn primary" id="confirmWaterImport" type="submit" disabled>Impor ke Firebase</button>
         <button class="btn outline" id="cancelWaterImport" type="button">Batal</button>
