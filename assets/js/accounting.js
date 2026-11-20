@@ -5,7 +5,7 @@
 export const ACCOUNT = Object.freeze({
   CASH_KAS:"asset.cash.kas", CASH_AIR:"asset.cash.air", CASH_SAMPAH:"asset.cash.sampah",
   AR_KAS:"asset.receivable.kas", AR_AIR:"asset.receivable.air", AR_SAMPAH:"asset.receivable.sampah",
-  DEPOSIT_KAS:"liability.deposit.kas", DEPOSIT_AIR:"liability.deposit.air", DEPOSIT_SAMPAH:"liability.deposit.sampah",
+  DEPOSIT_KAS:"liability.deposit.kas", DEPOSIT_AIR:"liability.deposit.air", DEPOSIT_SAMPAH:"liability.deposit.sampah",\n  ADVANCE_KAS:"liability.advance.kas", ADVANCE_AIR:"liability.advance.air", ADVANCE_SAMPAH:"liability.advance.sampah",
   REVENUE_KAS:"revenue.kas", REVENUE_AIR:"revenue.air", REVENUE_SAMPAH:"revenue.sampah",
   EXPENSE_KAS:"expense.kas", EXPENSE_AIR:"expense.air", EXPENSE_SAMPAH:"expense.sampah",
   OPENING_EQUITY:"equity.opening_balance"
@@ -40,7 +40,7 @@ export function buildPaymentJournal({id,period,date,householdId,items,createdAt}
     const cash=amount(item.cash||0),depositUsed=amount(item.depositUsed||0),applied=amount(item.applied||0),surplus=amount(item.surplus||0);
     if(cash)lines.push(line(ACCOUNT["CASH_"+cat.toUpperCase()],cash,0,{category:cat}));
     if(depositUsed)lines.push(line(ACCOUNT["DEPOSIT_"+cat.toUpperCase()],depositUsed,0,{category:cat,householdId}));
-    if(applied)lines.push(line(ACCOUNT["AR_"+cat.toUpperCase()],0,applied,{category:cat,householdId}));
+    if(applied)lines.push(line(item.advance?ACCOUNT["ADVANCE_"+cat.toUpperCase()]:ACCOUNT["AR_"+cat.toUpperCase()],0,applied,{category:cat,householdId}));
     if(surplus)lines.push(line(ACCOUNT["DEPOSIT_"+cat.toUpperCase()],0,surplus,{category:cat,householdId}));
   }
   if(!lines.length)return null;
