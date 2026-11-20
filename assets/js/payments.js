@@ -92,7 +92,6 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         </div>
         <p class="muted-note payment-note">Kas RT dan Sampah selalu dibayar penuh sesuai nominal bulan yang dicentang. Air dapat dibayar sebagian; kelebihan pembayaran Air masuk ke deposit Air.</p>
         <button id="savePayment" class="btn primary full" type="button">Simpan pembayaran</button>`;
-      const fixedCards=[...box.querySelectorAll(".payment-category[data-category='kas'],.payment-category[data-category='sampah']")];
       const allFixedChecks=[...box.querySelectorAll(".fixed-month-check")];
       const airInput=box.querySelector(".air-payment-amount");
       const getSelected=cat=>[...box.querySelectorAll(`.payment-category[data-category="${cat}"] .fixed-month-check:checked`)].filter(c=>num(c.dataset.amount)>0);
