@@ -5,6 +5,7 @@ import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, 
 import { renderPaymentPage } from "./payments.js?v=20261120-payment-month-grid1";
 import { renderWhatsAppPage } from "./whatsapp.js";
 import { renderOpeningMigration } from "./migration.js?v=20261120-migration2";
+import { cashFlow, trialBalance, summarizeLedger } from "./accounting.js";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
@@ -793,13 +794,14 @@ async function renderTransactions(c){
 }
 
 async function renderReports(c){
-  const [sums,archives]=await Promise.all([read("category_balances"),read("annual_summaries")]);
+  const [sums,archives,journals,arrears,deposits]=await Promise.all([read("category_balances"),read("annual_summaries"),read("journal_entries"),read("arrearsLedger"),read("deposits")]);
   const currentYear=new Date().getFullYear();
   const years=[...new Set([...Object.keys(archives||{}).map(Number),currentYear])].filter(y=>Number.isInteger(y)&&y>=2000&&y<=currentYear).sort((a,b)=>b-a);
   const options=years.map(y=>`<option value="${y}">${y}</option>`).join("");
   c.innerHTML=`<div class="section-head"><div><h3>Laporan Tahunan</h3><p class="tiny muted">Rekap ringkas per tahun agar laporan historis tidak perlu membaca seluruh transaksi.</p></div><span class="pill">Admin</span></div>
     <div class="panel"><div class="toolbar"><label class="field">Pilih tahun<select id="annualReportYear">${options}</select></label><button class="btn primary" id="buildAnnualReportBtn">Buat / Perbarui Rekap Tahun</button></div><p class="tiny muted" id="annualReportStatus">Rekap tahunan disimpan terpisah. Data transaksi asli tetap dipertahankan.</p></div>
     <div id="annualReportContent" class="panel" style="margin-top:14px">Memuat rekap…</div>
+    <div id="doubleEntryReport" class="panel" style="margin-top:14px">Memuat laporan jurnal…</div>
     <div class="muted-note" style="margin-top:12px">Rekap tahunan menyimpan total pemasukan dan pengeluaran per kategori, saldo operasional hasil perhitungan, serta posisi tunggakan dan deposit saat rekap dibuat. Untuk tahun yang sudah lewat, gunakan rekap tersimpan. Jika ada koreksi transaksi lama, buat ulang rekap tahun terkait.</div>`;
   const draw=async()=>{
     const year=$("#annualReportYear").value;
@@ -820,5 +822,19 @@ async function renderReports(c){
     finally{button.disabled=false;button.textContent="Buat / Perbarui Rekap Tahun";}
   });
   await draw();
+  const accountingHost=$("#doubleEntryReport");
+  const drawAccounting=()=>{
+    const year=$("#annualReportYear").value,flow=cashFlow(journals||{},{from:year+"-01",to:year+"-12"}),tb=trialBalance(journals||{}),ledger=summarizeLedger(journals||{});
+    const accountBalance=key=>Number(ledger.accounts[key]?.balance)||0;
+    const receivable=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,accountBalance("asset.receivable."+cat)),0);
+    const depositLiability=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,-accountBalance("liability.deposit."+cat)),0);
+    accountingHost.innerHTML=`<div class="section-head"><div><h3>Pembukuan Akrual · Jurnal Debit/Kredit</h3><p class="tiny muted">Tagihan bukan penerimaan kas. Laporan dihitung dari jurnal yang diposting.</p></div><span class="pill ${tb.balanced?"success":"danger"}">${tb.balanced?"Seimbang":"Tidak seimbang"}</span></div>
+      <div class="grid stats"><div class="stat"><div class="label">Kas masuk ${year}</div><div class="value">${money(flow.inflow)}</div></div><div class="stat"><div class="label">Kas keluar ${year}</div><div class="value">${money(flow.outflow)}</div></div><div class="stat"><div class="label">Piutang</div><div class="value">${money(receivable)}</div></div><div class="stat"><div class="label">Utang deposit</div><div class="value">${money(depositLiability)}</div></div></div>
+      <div class="summary-box" style="margin:14px 0"><div class="summary-line"><span>Arus kas bersih ${year}</span><b>${money(flow.net)}</b></div><div class="summary-line"><span>Total debit</span><b>${money(tb.totalDebit)}</b></div><div class="summary-line"><span>Total kredit</span><b>${money(tb.totalCredit)}</b></div></div>
+      <h4>Neraca saldo per akun</h4><div class="table-wrap"><table><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th><th>Saldo (D-K)</th></tr></thead><tbody>${tb.rows.map(x=>`<tr><td>${x.account}</td><td class="amount">${money(x.debit)}</td><td class="amount">${money(x.credit)}</td><td class="amount">${money(x.balance)}</td></tr>`).join("")||'<tr><td colspan="4">Belum ada jurnal.</td></tr>'}</tbody><tfoot><tr><th>Total</th><th>${money(tb.totalDebit)}</th><th>${money(tb.totalCredit)}</th><th>—</th></tr></tfoot></table></div>
+      <p class="tiny muted" style="margin-top:12px">Piutang dan deposit dihitung dari jurnal terposting. Pastikan saldo awal dan koreksi meter juga telah dijurnal agar laporan lengkap.</p>`;
+  };
+  drawAccounting();
+  $("#annualReportYear").addEventListener("change",drawAccounting);
 }
 render();
