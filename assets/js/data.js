@@ -536,38 +536,54 @@ export async function getBillingSettings() {
 }
 export async function saveBillingSettings(values) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
-  const previous = await getBillingSettings();
+  const [previous,allBalances,deposits,depositLedger,billingRuns,bills]=await Promise.all([
+    getBillingSettings(),read("category_balances"),read("deposits"),read("deposit_ledger"),read("billing_runs"),read("bills")
+  ]);
   const openingBalances = {
     kas: Math.max(0, Number(values.openingKas) || 0),
     air: Math.max(0, Number(values.openingAir) || 0),
     sampah: Math.max(0, Number(values.openingSampah) || 0)
   };
+  const goLivePeriod=validPeriod(values.goLivePeriod)?values.goLivePeriod:(previous.goLivePeriod||new Date().toISOString().slice(0,7));
+  const oldGoLive=validPeriod(previous.goLivePeriod)?previous.goLivePeriod:goLivePeriod;
+  if(goLivePeriod!==oldGoLive){
+    const hasBilling=Object.keys(billingRuns||{}).length>0||Object.keys(bills||{}).length>0;
+    if(hasBilling)throw new Error("Bulan mulai aplikasi tidak dapat diubah setelah tagihan/periode pembukuan terbentuk. Gunakan koreksi saldo awal, bukan menggeser periode.");
+  }
   const clean = {
     kasMonthly: Math.max(0, Number(values.kasMonthly) || 0),
     waterAdmin: Math.max(0, Number(values.waterAdmin) || 0),
     waterPerM3: Math.max(0, Number(values.waterPerM3) || 0),
     sampahMonthly: Math.max(0, Number(values.sampahMonthly) || 0),
-    goLivePeriod: validPeriod(values.goLivePeriod) ? values.goLivePeriod : (previous.goLivePeriod || new Date().toISOString().slice(0,7)),
+    goLivePeriod,
     openingBalances,
     updatedAt: Date.now()
   };
   const updates = {"settings/billingRates": clean};
-  for (const cat of ["kas","air","sampah"]) {
-    const oldOpening = Number(previous.openingBalances?.[cat]) || 0;
-    const nextOpening = openingBalances[cat];
-    const balanceRef = await get(root(`category_balances/${cat}`));
-    const current = balanceRef.exists() ? balanceRef.val() : {};
-    const currentBalance = Number(current.balance) || 0;
-    updates[`category_balances/${cat}`] = {
-      ...current,
-      openingBalance: nextOpening,
-      balance: currentBalance + (nextOpening - oldOpening),
-      updatedAt: Date.now()
+  const cash={...openingBalances},openingDeposits={kas:0,air:0,sampah:0};
+  for(const cat of ["kas","air","sampah"]){
+    const oldOpening=Number(previous.openingBalances?.[cat])||0,nextOpening=openingBalances[cat];
+    const current=allBalances?.[cat]||{};
+    updates[`category_balances/${cat}]={
+      ...current,openingBalance:nextOpening,
+      balance:(Number(current.balance)||0)+(nextOpening-oldOpening),updatedAt:Date.now()
     };
+    openingDeposits[cat]=Object.entries(deposits||{}).reduce((sum,[householdId,cats])=>{
+      const currentDeposit=Number(cats?.[cat])||0;
+      const movement=Object.values(depositLedger||{}).filter(row=>{
+        const rowPeriod=validPeriod(row?.period)?row.period:(String(row?.date||"").slice(0,7));
+        return row?.householdId===householdId&&row?.category===cat&&validPeriod(rowPeriod)&&rowPeriod>=goLivePeriod;
+      }).reduce((n,row)=>n+(Number(row?.amount)||0),0);
+      return sum+Math.max(0,currentDeposit-movement);
+    },0);
   }
-  const logRef = push(root("audit_logs"));
-  updates[`audit_logs/${logRef.key}`] = {type:"opening_balances_updated", openingBalances, createdAt:Date.now()};
-  await update(ref(db), updates);
+  const openingId="opening_balance_"+goLivePeriod;
+  const openingJournal=buildOpeningJournal({id:openingId,period:goLivePeriod,date:goLivePeriod+"-01",cash,receivables:{},deposits:openingDeposits,createdAt:Date.now()});
+  updates["journal_entries/"+openingId]=openingJournal||null;
+  if(oldGoLive!==goLivePeriod)updates["journal_entries/opening_balance_"+oldGoLive]=null;
+  const logRef=push(root("audit_logs"));
+  updates[`audit_logs/${logRef.key}`]={type:"opening_balances_updated",openingBalances,goLivePeriod,openingDeposits,createdAt:Date.now()};
+  await writeAndVerify(updates,[`settings/billingRates`,`journal_entries/${openingId}`]);
   await refreshPublicSnapshotSafely();
   return clean;
 }
