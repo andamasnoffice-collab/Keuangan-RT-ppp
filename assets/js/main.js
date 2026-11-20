@@ -708,7 +708,7 @@ async function renderCategory(c,cat){
   const monthDue={};
   for(const ledger of Object.values(arrearsLedger||{})){
     for(const [key,row] of Object.entries(ledger||{})){
-      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period||key<goLive)continue;
+      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
       const amount=Math.max(0,Number(row?.[cat])||0);
       if(amount>0)monthDue[key]=(monthDue[key]||0)+amount;
     }
