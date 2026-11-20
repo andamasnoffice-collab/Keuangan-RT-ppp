@@ -569,8 +569,8 @@ function parseCsvText(text){
   for(let i=0;i<text.length;i++){const ch=text[i],next=text[i+1];
     if(ch==='"'&&quoted&&next==='"'){cell+='"';i++;}
     else if(ch==='"')quoted=!quoted;
-    else if((ch===","||ch===";"||ch==="\\t")&&!quoted){row.push(cell);cell="";}
-    else if((ch==="\\n"||ch==="\\r")&&!quoted){if(ch==="\\r"&&next==="\\n")i++;row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);row=[];cell="";}
+    else if((ch===","||ch===";"||ch==="\t")&&!quoted){row.push(cell);cell="";}
+    else if((ch==="\n"||ch==="\r")&&!quoted){if(ch==="\r"&&next==="\n")i++;row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);row=[];cell="";}
     else cell+=ch;
   }
   row.push(cell);if(row.some(v=>String(v).trim()))rows.push(row);
