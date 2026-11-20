@@ -197,11 +197,13 @@ export async function createMonthlyBills(period, recordedBy) {
     for(const [id,h] of active){
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
       const fixedAdvance=advancePayments?.[id]?.[period]||{};
-      const kasAdvance=Math.min(raw.kas,Math.max(0,Number(fixedAdvance.kas?.amount)||0));
-      const sampahAdvance=Math.min(raw.sampah,Math.max(0,Number(fixedAdvance.sampah?.amount)||0));
+      const kasBillAmount=fixedAdvance.kas?Math.max(0,Number(fixedAdvance.kas.rate)||Number(fixedAdvance.kas.amount)||raw.kas):raw.kas;
+      const sampahBillAmount=fixedAdvance.sampah?Math.max(0,Number(fixedAdvance.sampah.rate)||Number(fixedAdvance.sampah.amount)||raw.sampah):raw.sampah;
+      const kasAdvance=fixedAdvance.kas?Math.min(kasBillAmount,Math.max(0,Number(fixedAdvance.kas.amount)||0)):0;
+      const sampahAdvance=fixedAdvance.sampah?Math.min(sampahBillAmount,Math.max(0,Number(fixedAdvance.sampah.amount)||0)):0;
       const row={
-        kas:{amount:raw.kas,paidAmount:kasAdvance,remaining:Math.max(0,raw.kas-kasAdvance),status:raw.kas===0||kasAdvance>=raw.kas?"paid":kasAdvance>0?"partial":"unpaid",...(kasAdvance?{advancePaymentId:fixedAdvance.kas.paymentId,advancePaidAt:fixedAdvance.kas.paidAt,rateLocked:Number(fixedAdvance.kas.rate)||raw.kas}:{}),createdAt:now},
-        sampah:{amount:raw.sampah,paidAmount:sampahAdvance,remaining:Math.max(0,raw.sampah-sampahAdvance),status:raw.sampah===0||sampahAdvance>=raw.sampah?"paid":sampahAdvance>0?"partial":"unpaid",...(sampahAdvance?{advancePaymentId:fixedAdvance.sampah.paymentId,advancePaidAt:fixedAdvance.sampah.paidAt,rateLocked:Number(fixedAdvance.sampah.rate)||raw.sampah}:{}),createdAt:now},
+        kas:{amount:kasBillAmount,paidAmount:kasAdvance,remaining:Math.max(0,kasBillAmount-kasAdvance),status:kasBillAmount===0||kasAdvance>=kasBillAmount?"paid":kasAdvance>0?"partial":"unpaid",...(kasAdvance?{advancePaymentId:fixedAdvance.kas.paymentId,advancePaidAt:fixedAdvance.kas.paidAt,rateLocked:kasBillAmount}:{}),createdAt:now},
+        sampah:{amount:sampahBillAmount,paidAmount:sampahAdvance,remaining:Math.max(0,sampahBillAmount-sampahAdvance),status:sampahBillAmount===0||sampahAdvance>=sampahBillAmount?"paid":sampahAdvance>0?"partial":"unpaid",...(sampahAdvance?{advancePaymentId:fixedAdvance.sampah.paymentId,advancePaidAt:fixedAdvance.sampah.paidAt,rateLocked:sampahBillAmount}:{}),createdAt:now},
         air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
       const applied={};
