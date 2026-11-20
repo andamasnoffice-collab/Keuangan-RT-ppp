@@ -832,7 +832,7 @@ async function renderTransactions(c){
 }
 
 async function renderReports(c){
-  const [sums,archives,journals,arrears,deposits]=await Promise.all([read("category_balances"),read("annual_summaries"),read("journal_entries"),read("arrearsLedger"),read("deposits")]);
+  const [sums,archives,journals,arrears,deposits,billingSettings]=await Promise.all([read("category_balances"),read("annual_summaries"),read("journal_entries"),read("arrearsLedger"),read("deposits"),getBillingSettings()]);
   const currentYear=new Date().getFullYear();
   const years=[...new Set([...Object.keys(archives||{}).map(Number),currentYear])].filter(y=>Number.isInteger(y)&&y>=2000&&y<=currentYear).sort((a,b)=>b-a);
   const options=years.map(y=>`<option value="${y}">${y}</option>`).join("");
@@ -862,7 +862,7 @@ async function renderReports(c){
   await draw();
   const accountingHost=$("#doubleEntryReport");
   const drawAccounting=()=>{
-    const year=$("#annualReportYear").value,flow=cashFlow(journals||{},{from:(archives?.[year]?.periodStart||year+"-01"),to:(archives?.[year]?.periodEnd||year+"-12")}),tb=trialBalance(journals||{}),ledger=summarizeLedger(journals||{});
+    const year=$("#annualReportYear").value,flow=cashFlow(journals||{},{from:(archives?.[year]?.periodStart||(billingSettings?.goLivePeriod>year+"-01"?billingSettings.goLivePeriod:year+"-01")),to:(archives?.[year]?.periodEnd||year+"-12")}),tb=trialBalance(journals||{}),ledger=summarizeLedger(journals||{});
     const accountBalance=key=>Number(ledger.accounts[key]?.balance)||0;
     const receivable=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,accountBalance("asset.receivable."+cat)),0);
     const depositLiability=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,-accountBalance("liability.deposit."+cat)),0);
