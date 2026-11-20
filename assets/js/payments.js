@@ -145,11 +145,12 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         const date=box.querySelector("#paymentDate").value;
         if(!date){toast("Tanggal pembayaran wajib diisi.");return;}
         button.disabled=true;button.textContent="Menyimpan…";
-        let primarySaved=false;
+        let primarySaved=false,summaryDeltasRecovery=[],paymentPeriodRecovery="";
         try{
           const updates={},timestamp=Date.now(),paymentPeriod=String(date).slice(0,7);
+          paymentPeriodRecovery=paymentPeriod;
           const paymentRef=push(ref(db,`paymentsByMonth/${paymentPeriod}`));
-          const summaryDeltas=[];
+          const summaryDeltas=[];summaryDeltasRecovery=summaryDeltas;
           let totalApplied=0,totalDepositUsed=0,totalSurplus=0;
           const items=[];
           for(const cat of fixedCategories){
@@ -233,8 +234,18 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           toast(publicSynced?"Pembayaran tersimpan, arus kas diperbarui, dan daftar publik disinkronkan.":"Pembayaran tersimpan, tetapi sinkronisasi daftar publik tertunda.");
           select.dispatchEvent(new Event("change"));
         }catch(err){
-          if(primarySaved){toast("Pembayaran utama sudah tersimpan. Jangan ulangi pembayaran ini; sinkronisasi ringkasan perlu diperiksa: "+err.message);select.dispatchEvent(new Event("change"));}
-          else toast("Gagal menyimpan pembayaran: "+err.message);
+          if(primarySaved){
+            try{
+              for(const item of summaryDeltasRecovery)await applyMonthlySummaryDelta(paymentPeriodRecovery,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
+              const latestLedger=await getHouseholdArrearLedger(id);
+              for(const cat of categories)for(const row of periodBills)await setHouseholdArrearPeriod(id,row.period,cat,latestLedger?.[row.period]?.[cat]||0);
+              const synced=await refreshPublicSnapshotSafely();
+              toast(synced?"Pembayaran tersimpan dan sinkronisasi ringkasan berhasil dipulihkan.":"Pembayaran tersimpan; sinkronisasi publik masih tertunda.");
+            }catch(recoveryError){
+              toast("Pembayaran utama sudah tersimpan. Jangan ulangi pembayaran ini; perlu pemeriksaan sinkronisasi: "+recoveryError.message);
+            }
+            select.dispatchEvent(new Event("change"));
+          }else toast("Gagal menyimpan pembayaran: "+err.message);
         }
         finally{button.disabled=false;button.textContent="Simpan pembayaran";}
       });
