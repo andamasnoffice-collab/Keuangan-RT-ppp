@@ -405,8 +405,8 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   const logRef=push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`]={type:"water_meter_recorded",period,householdId,previousMeter:previous,currentMeter:value,usage,totalAmount:total,recordedBy:recordedBy||null,createdAt:timestamp};
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
-  await setHouseholdArrearPeriod(householdId,period,"air",remaining);
-  await applyDepositToWaterBill(period,householdId,recordedBy);
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
   await refreshPublicSnapshotSafely();
   return reading;
 }
