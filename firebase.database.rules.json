@@ -89,6 +89,10 @@
     "water_import_runs": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "annual_summaries": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
