@@ -1,4 +1,5 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+import { buildPaymentJournal } from "./accounting.js";
 import { db } from "./firebase.js";
 import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-audit9";
 
@@ -184,7 +185,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               updates[`transactionsByMonth/${paymentPeriod}/${txRef.key}`]={id:txRef.key,type:"payment",category:cat,amount:currentRemaining,householdId:id,referenceId:paymentRef.key,date,description:desc,recordedBy:currentUser?.uid||null,createdAt:timestamp};
               summaryDeltas.push({id:txRef.key,category:cat,amount:currentRemaining,description:desc});
               totalApplied+=currentRemaining;
-              items.push({cat,period:item.period,cash:currentRemaining,depositUsed:0,applied:currentRemaining,surplus:0,remaining:0});
+              items.push({cat,period:item.period,cash:currentRemaining,depositUsed:0,applied:currentRemaining,surplus:0,remaining:0,advance:!!item.future});
             }
           }
           for(const cat of fixedCategories){
@@ -234,6 +235,8 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           }
           const totalCash=kasTotal+sampahTotal+airCash;
           updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:paymentPeriod,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
+          const journal=buildPaymentJournal({id:"payment_"+paymentRef.key,period:paymentPeriod,date,householdId:id,items,createdAt:timestamp});
+          if(journal)updates[`journal_entries/${journal.id}`]=journal;
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:paymentPeriod,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const verifyPaths=[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`];
