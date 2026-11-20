@@ -26,9 +26,9 @@ export function createJournalEntry({id,sourceType,sourceId,date,period,descripti
   const totals=assertBalanced(lines);
   return {id,sourceType,sourceId,date:date||null,period,description:String(description||"").slice(0,180),householdId,lines,totals,createdAt};
 }
-export function buildInvoiceJournal({id,period,date,householdId,category,amount,createdAt}){
+export function buildInvoiceJournal({id,period,date,householdId,category,amount:rawAmount,createdAt}){
   if(!CATS.includes(category))throw new Error("Kategori tagihan tidak valid.");
-  const n=amount(amount); if(!n)return null;
+  const n=amount(rawAmount); if(!n)return null;
   return createJournalEntry({id,sourceType:"invoice",sourceId:id,date,period,householdId,description:"Pengakuan tagihan "+category,createdAt,lines:[
     line(ACCOUNT["AR_"+category.toUpperCase()],n,0,{householdId,category}),
     line(ACCOUNT["REVENUE_"+category.toUpperCase()],0,n,{category})
