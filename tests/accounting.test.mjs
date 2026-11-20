@@ -45,6 +45,6 @@ test("future fixed prepayment is cash received but not recognized as income unti
  assert.equal(paymentRecognizedCash({cash:100000,applied:100000}),100000);
 });
 test("air overpayment recognizes only cash applied to receivables, not deposit surplus",()=>{
- const {paymentRecognizedCash}=await import("../assets/js/accounting.js");
+
  assert.equal(paymentRecognizedCash({cash:70000,applied:70000,cashApplied:50000}),50000);
 });
