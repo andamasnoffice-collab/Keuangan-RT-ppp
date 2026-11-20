@@ -145,6 +145,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
         const date=box.querySelector("#paymentDate").value;
         if(!date){toast("Tanggal pembayaran wajib diisi.");return;}
         button.disabled=true;button.textContent="Menyimpan…";
+        let primarySaved=false;
         try{
           const updates={},timestamp=Date.now(),paymentPeriod=String(date).slice(0,7);
           const paymentRef=push(ref(db,`paymentsByMonth/${paymentPeriod}`));
@@ -220,6 +221,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:paymentPeriod,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           await writeAndVerify(updates,[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]);
+          primarySaved=true;
           for(const item of summaryDeltas)await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
           for(const cat of categories){
             for(const row of periodBills){
@@ -230,7 +232,10 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           const publicSynced=await refreshPublicSnapshotSafely();
           toast(publicSynced?"Pembayaran tersimpan, arus kas diperbarui, dan daftar publik disinkronkan.":"Pembayaran tersimpan, tetapi sinkronisasi daftar publik tertunda.");
           select.dispatchEvent(new Event("change"));
-        }catch(err){toast("Gagal menyimpan pembayaran: "+err.message);}
+        }catch(err){
+          if(primarySaved){toast("Pembayaran utama sudah tersimpan. Jangan ulangi pembayaran ini; sinkronisasi ringkasan perlu diperiksa: "+err.message);select.dispatchEvent(new Event("change"));}
+          else toast("Gagal menyimpan pembayaran: "+err.message);
+        }
         finally{button.disabled=false;button.textContent="Simpan pembayaran";}
       });
     }catch(err){box.innerHTML=`<div class="muted-note">Gagal memuat tagihan: ${esc(err.message)}</div>`;}
