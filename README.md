@@ -31,7 +31,7 @@
 
 ## Batasan yang masih perlu pengujian
 - Integrasi Firebase langsung dan simulasi alur dari tagihan sampai laporan perlu diuji pada proyek uji sebelum dipakai untuk uang sungguhan.
-- Aplikasi web mencatat transaksi langsung ke RTDB dari browser. Callable Function `recordPayment` pada folder `functions` masih berupa kerangka nonaktif dan tidak digunakan aplikasi.
+- Aplikasi web mencatat transaksi langsung ke RTDB dari browser. Tidak ada Cloud Functions yang digunakan aplikasi saat ini.
 - Ringkasan bulanan dan proyeksi publik adalah data turunan dari transaksi sumber; jika ada transaksi lama yang dikoreksi manual, jalankan rekonsiliasi/rebuild sebelum mengandalkan laporan.
 - Jangan deploy file Rules atau Functions dari branch audit ini sebelum pemeriksaan dan persetujuan terpisah.
 
