@@ -611,7 +611,7 @@ async function renderWaterMeters(c){
       const previous=Number(h.currentWaterMeter??h.initialWaterMeter)||0,saved=readings[id];
       return `<div class="water-meter-line" data-house="${escapeHtml(id)}" data-previous="${previous}" data-rate="${Number(settings.waterPerM3)||0}" data-admin="${Number(settings.waterAdmin)||0}">
   <div class="water-meter-home"><b>${escapeHtml(h.block||"Rumah")}</b><small>Awal: ${previous.toLocaleString("id-ID")} m³</small></div>
-  <div class="water-meter-entry"><input class="meter-current" type="number" min="${Number(saved?.previousMeter??previous)}" step="0.001" inputmode="decimal" value="${saved?Number(saved.currentMeter):""}" placeholder="Angka meter akhir" ${saved?"disabled":""}><small class="meter-preview">${saved?"Tersimpan · "+saved.usage+" m³ · "+money(saved.totalAmount):"Isi angka meter akhir"}</small></div>
+  <div class="water-meter-entry"><input class="meter-current" type="number" min="${Number(saved?.previousMeter??previous)}" step="0.001" inputmode="decimal" value="${saved?Number(saved.currentMeter):""}" placeholder="Angka meter akhir" ${saved?"disabled":""}><small class="meter-preview">${saved?(saved.amountNeedsReview?"Meter tersimpan · nominal perlu dilengkapi":"Tersimpan · "+saved.usage+" m³ · "+money(saved.totalAmount)):"Isi angka meter akhir"}</small></div>
   <div class="water-meter-actions"><button class="btn ${saved?"outline":"primary"} small meter-save" type="button" ${saved?"data-edit-mode":"disabled"}>${saved?"Edit":"Simpan"}</button></div>
 </div>`;}).join("")||'<div class="empty">Belum ada rumah aktif atau kontrak.</div>'}
   </div>`;
