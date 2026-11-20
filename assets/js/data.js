@@ -467,9 +467,14 @@ export async function createExpense({category, amount, date, description, proof,
   const logRef = push(root("audit_logs"));
   updates[`audit_logs/${logRef.key}`] = {type:"expense_created", expenseId:expenseRef.key, transactionId:txRef.key, category, amount:value, recordedBy:recordedBy||null, createdAt:timestamp};
   await writeAndVerify(updates,[`expensesByMonth/${period}/${expenseRef.key}`,`transactionsByMonth/${period}/${txRef.key}`,`category_balances/${category}`]);
-  await applyMonthlySummaryDelta(period,expenseRef.key,{type:"expense",category,amount:value,date:record.date,description:record.description});
+  let summarySyncPending=false;
+  try{await applyMonthlySummaryDelta(period,expenseRef.key,{type:"expense",category,amount:value,date:record.date,description:record.description});}
+  catch(firstError){
+    try{await applyMonthlySummaryDelta(period,expenseRef.key,{type:"expense",category,amount:value,date:record.date,description:record.description});}
+    catch(secondError){summarySyncPending=true;console.error("Pengeluaran tersimpan tetapi ringkasan bulanan tertunda:",firstError,secondError);}
+  }
   await refreshPublicSnapshotSafely();
-  return record;
+  return {...record,summarySyncPending};
 }
 
 
