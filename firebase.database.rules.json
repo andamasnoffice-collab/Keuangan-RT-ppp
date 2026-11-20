@@ -94,6 +94,10 @@
       ".read": "auth != null",
       ".write": "auth != null"
     },
+    "journal_entries": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
     "fixed_advance_payments": {
       ".read": "auth != null",
       ".write": "auth != null"

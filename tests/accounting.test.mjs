@@ -59,3 +59,13 @@ test("waiver writes off receivable without cash movement and stays balanced",()=
  const flow=cashFlow({w1:j});
  assert.equal(flow.inflow,0);assert.equal(flow.outflow,0);assert.equal(flow.net,0);
 });
+test("opening cash and deposit journal balances without counting as period cash flow",()=>{
+ const opening=buildOpeningJournal({id:"opening_balance_2026-11",period:"2026-11",date:"2026-11-01",cash:{kas:10000000,air:2000000},receivables:{},deposits:{air:250000},createdAt:1});
+ assert.equal(opening.sourceType,"opening_balance");
+ assert.equal(opening.totals.debit,12000000);
+ assert.equal(opening.totals.credit,12000000);
+ assert.equal(opening.lines.find(x=>x.account==="asset.cash.kas").debit,10000000);
+ assert.equal(opening.lines.find(x=>x.account==="liability.deposit.air").credit,250000);
+ const flow=cashFlow({opening});
+ assert.equal(flow.inflow,0);assert.equal(flow.outflow,0);assert.equal(flow.net,0);
+});
