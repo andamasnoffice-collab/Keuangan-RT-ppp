@@ -34,6 +34,18 @@ export function buildInvoiceJournal({id,period,date,householdId,category,amount:
     line(ACCOUNT["REVENUE_"+category.toUpperCase()],0,n,{category})
   ]});
 }
+export function buildInvoiceAdjustmentJournal({id,period,date,householdId,category,delta,createdAt}){
+  if(!CATS.includes(category))throw new Error("Kategori penyesuaian tidak valid.");
+  const n=amount(Math.abs(Number(delta)||0));if(!n)return null;
+  const lines=delta>0?[
+    line(ACCOUNT["AR_"+category.toUpperCase()],n,0,{householdId,category}),
+    line(ACCOUNT["REVENUE_"+category.toUpperCase()],0,n,{category})
+  ]:[
+    line(ACCOUNT["REVENUE_"+category.toUpperCase()],n,0,{category}),
+    line(ACCOUNT["AR_"+category.toUpperCase()],0,n,{householdId,category})
+  ];
+  return createJournalEntry({id,sourceType:"invoice_adjustment",sourceId:id,date,period,householdId,description:"Penyesuaian tagihan "+category,createdAt,lines});
+}
 export function buildPaymentJournal({id,period,date,householdId,items,createdAt}){
   const lines=[];
   for(const item of items||[]){
