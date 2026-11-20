@@ -59,6 +59,13 @@ export function buildPaymentJournal({id,period,date,householdId,items,createdAt}
   if(!lines.length)return null;
   return createJournalEntry({id,sourceType:"payment",sourceId:id,date,period,householdId,description:"Penerimaan pembayaran warga",createdAt,lines});
 }
+export function paymentRecognizedCash(item){
+  if(!item||item.advance)return 0;
+  const cash=amount(item.cash||0);
+  const applied=amount(item.applied||0);
+  const explicit=item.cashApplied;
+  return explicit===undefined?Math.min(cash,applied):Math.min(cash,amount(explicit));
+}
 export function buildAdvanceApplicationJournal({id,period,date,householdId,category,amount:rawAmount,createdAt}){
   if(!CATS.includes(category))throw new Error("Kategori uang muka tidak valid.");
   const n=amount(rawAmount);if(!n)return null;
