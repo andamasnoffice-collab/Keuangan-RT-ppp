@@ -628,13 +628,13 @@ export async function deleteMasterData({mode,period,recordedBy}) {
     await refreshPublicSnapshotSafely();
     return {mode:"all",deletedNodes:MASTER_DATA_NODES.length};
   }
-  if(mode!=="period"||!/^\\d{4}-(0[1-9]|1[0-2])$/.test(String(period||""))) throw new Error("Pilih periode yang valid.");
+  if(mode!=="period"||!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period||""))) throw new Error("Pilih periode yang valid.");
   const p=period,year=Number(p.slice(0,4));
   for(const node of ["bills","paymentsByMonth","expensesByMonth","transactionsByMonth","water_readings","financeSummaryByMonth","billing_runs","water_import_runs"]) updates[`${node}/${p}`]=null;
   const periodOf=row=>{
     const raw=row?.date||row?.period||row?.createdAt||row?.timestamp;
     if(typeof raw==="number")return new Date(raw).toISOString().slice(0,7);
-    const s=String(raw||"");if(/^\\d{4}-\\d{2}/.test(s))return s.slice(0,7);
+    const s=String(raw||"");if(/^\d{4}-\d{2}/.test(s))return s.slice(0,7);
     const n=Number(s);return Number.isFinite(n)&&n>0?new Date(n).toISOString().slice(0,7):"";
   };
   for(const node of ["payments","expenses","transactions"]){
@@ -649,7 +649,7 @@ export async function deleteMasterData({mode,period,recordedBy}) {
     updates[`arrearsLedger/${houseId}/${p}`]=null;
     const totals={kas:0,air:0,sampah:0,total:0,periodCount:0};
     for(const [month,row] of Object.entries(next)){
-      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month))continue;
+      if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))continue;
       let due=false;
       for(const cat of ["kas","air","sampah"]){const n=Math.max(0,Number(row?.[cat])||0);totals[cat]+=n;if(n>0)due=true;}
       if(due)totals.periodCount++;
