@@ -172,6 +172,50 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
   return use;
 }
 
+export async function syncHouseholdBillingHistory(householdId) {
+  if(!db) throw new Error("Firebase belum dikonfigurasi.");
+  const [house,settings,ledger]=await Promise.all([
+    read("households/"+householdId),getBillingSettings(),getHouseholdArrearLedger(householdId)
+  ]);
+  if(!house) throw new Error("Data rumah tidak ditemukan.");
+  const start=validPeriod(house.billingStartPeriod)?house.billingStartPeriod:
+    validPeriod(house.openingArrearsPeriod)?house.openingArrearsPeriod:null;
+  const goLive=validPeriod(settings.goLivePeriod)?settings.goLivePeriod:null;
+  if(!start||!goLive||start>=goLive||house.status==="empty"||house.status==="inactive") return {created:0,from:start,to:goLive};
+  const rates={kas:Math.max(0,Number(settings.kasMonthly)||0),sampah:Math.max(0,Number(settings.sampahMonthly)||0)};
+  const updates={},now=Date.now();
+  let created=0;
+  for(const cat of ["kas","sampah"]){
+    if(rates[cat]<=0) continue;
+    for(let period=start;period<goLive;period=nextMonth(period)){
+      const existingLedger=ledger?.[period]?.[cat];
+      const existingBill=await read("bills/"+period+"/"+householdId+"/"+cat);
+      if(existingLedger!==undefined&&existingLedger!==null) continue;
+      if(existingBill) continue;
+      updates["bills/"+period+"/"+householdId+"/"+cat]={amount:rates[cat],paidAmount:0,remaining:rates[cat],status:"unpaid",openingArrears:true,createdAt:now,source:"household_start_period_sync"};
+      updates["arrearsLedger/"+householdId+"/"+period+"/"+cat]=rates[cat];
+      const journal=buildOpeningJournal({id:"opening_arrears_"+householdId+"_"+period+"_"+cat,period:goLive,date:goLive+"-01",cash:{},receivables:{[cat]:rates[cat]},deposits:{},createdAt:now});
+      if(journal) updates["journal_entries/"+journal.id]=journal;
+      created++;
+    }
+  }
+  if(created){
+    await writeAndVerify(updates,["arrearsLedger/"+householdId]);
+    const fresh=await getHouseholdArrearLedger(householdId);
+    const totals={kas:0,air:0,sampah:0,total:0,periodCount:0,updatedAt:Date.now()};
+    for(const [period,row] of Object.entries(fresh||{})){
+      if(!validPeriod(period)) continue;
+      let hasDue=false;
+      for(const cat of ["kas","air","sampah"]){const n=Math.max(0,Number(row?.[cat])||0);totals[cat]+=n;if(n>0)hasDue=true;}
+      if(hasDue)totals.periodCount++;
+    }
+    totals.total=totals.kas+totals.air+totals.sampah;
+    await set(root("arrearsSummary/"+householdId),totals);
+    await refreshPublicSnapshotSafely();
+  }
+  return {created,from:start,to:goLive};
+}
+
 export async function createMonthlyBills(period, recordedBy) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if (!validPeriod(period)) throw new Error("Periode tagihan tidak valid.");
@@ -201,7 +245,7 @@ export async function createMonthlyBills(period, recordedBy) {
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
       const arrearsStart=h.arrearsStartPeriod||{};
       const legacyStart=h.openingArrearsPeriod||goLivePeriod;
-      const startFor=(cat)=>validPeriod(arrearsStart[cat])?arrearsStart[cat]:(h.openingArrearsRecorded&&validPeriod(legacyStart)&&Number(h.openingArrears?.[cat])>0?legacyStart:null);
+      const startFor=(cat)=>validPeriod(arrearsStart[cat])?arrearsStart[cat]:(validPeriod(h.billingStartPeriod)?h.billingStartPeriod:(h.openingArrearsRecorded&&validPeriod(legacyStart)?legacyStart:null));
       for(const cat of ["kas","sampah"]){
         const start=startFor(cat);
         if(!start||start>=goLivePeriod)continue;
