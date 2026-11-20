@@ -11,3 +11,5 @@
 Peringatan: public_views benar-benar publik dan dapat dibaca siapa saja yang mengetahui URL database. Periksa Rules Simulator sebelum deploy.
 
 - `fixed_advance_payments`: hanya pengguna terautentikasi yang dapat membaca/menulis catatan pembayaran di muka Kas RT dan Sampah.
+
+- `opening_migrations` dan `opening_migration_records`: hanya pengguna terautentikasi yang dapat membaca/menulis status dan arsip batch migrasi saldo awal. Root `.read`/`.write` tetap `false`.
