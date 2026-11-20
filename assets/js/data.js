@@ -512,11 +512,11 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
     const b=balances?.[category]||{};
     categoryTotals[category]={balance:Number(b.balance)||0,income:Number(b.income)||0,expense:Number(b.expense)||0};
   }
-  const safePublicDescription=value=>String(value||"Transaksi").replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,"[data pribadi]").replace(/(?:\+?62|0)\d[\d\s-]{7,}/g,"[nomor disamarkan]").slice(0,120);
+  const publicCategoryLabel=category=>({kas:"Kas RT",air:"Air",sampah:"Sampah"})[category]||"Lainnya";
   const financeByMonth={};
   for(const [period,summary] of Object.entries(financeSummaryByMonth||{})){
-    const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:safePublicDescription(x.description||"Pemasukan")}));
-    const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:safePublicDescription(x.description||"Pengeluaran")}));
+    const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:"Pemasukan "+publicCategoryLabel(x.category)}));
+    const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:"Pengeluaran "+publicCategoryLabel(x.category)}));
     financeByMonth[period]={
       income:incomeItems,
       expenses:expenseItems,
