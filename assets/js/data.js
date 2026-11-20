@@ -154,6 +154,7 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
   const paymentRef=push(root(`paymentsByMonth/${period}`));
   const txRef=push(root(`transactionsByMonth/${period}`));
   const ledgerRef=push(root("deposit_ledger"));
+  const journal=buildPaymentJournal({id:"payment_"+paymentRef.key,period,date:period+"-01",householdId,items:[{cat:"air",cash:0,depositUsed:use,applied:use,surplus:0}],createdAt:now});
   const updates={
     [`deposits/${householdId}/air`]:depositAfter,
     [`bills/${period}/${householdId}/air/paidAmount`]:paid+use,
@@ -163,10 +164,10 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
     [`arrearsLedger/${householdId}/${period}/air`]:remaining,
     [`deposit_ledger/${ledgerRef.key}`]:{householdId,category:"air",amount:-use,before:available,after:depositAfter,type:"deposit_auto_applied",date:period+"-01",period,paymentId:paymentRef.key,createdAt:now,recordedBy:recordedBy||null},
     [`paymentsByMonth/${period}/${paymentRef.key}`]:{id:paymentRef.key,type:"automatic_deposit_application",householdId,period,date:period+"-01",items:[{cat:"air",cash:0,depositUsed:use,applied:use,surplus:0,remaining}],cashReceived:0,depositUsed:use,appliedToBills:use,surplusDeposit:0,method:"deposit_auto",note:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
+    [`journal_entries/${journal.id}`]:journal,
     [`transactionsByMonth/${period}/${txRef.key}`]:{id:txRef.key,type:"payment",category:"air",amount:use,householdId,referenceId:paymentRef.key,date:period+"-01",description:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
   };
   await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`]);
-  await retryIdempotent(()=>applyMonthlySummaryDelta(period,txRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan otomatis dari deposit air"}));
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
   return use;
 }
