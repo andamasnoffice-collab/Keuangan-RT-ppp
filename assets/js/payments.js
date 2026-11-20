@@ -66,7 +66,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
                   const paid=row.paid||row.billExists&&row.amount===0;
                   const blocked=!row.billExists;
                   const status=paid?"Sudah lunas":blocked?"Tagihan belum dibuat":row.future?"Pembayaran di muka · tarif dikunci":`Sisa tagihan: ${money(row.amount)}`;
-                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.billExists?money(row.amount):"—"}</strong></label>`;
+                  return `<label class="pay-month-row ${paid?"is-paid":blocked?"is-not-created":""}"><input type="checkbox" class="fixed-month-check" data-period="${row.period}" data-amount="${row.amount}" data-bill-exists="${row.billExists}" data-future="${row.future}" data-sequence="${row.sequence}" ${paid?"checked disabled":blocked?"disabled":""}><span><b>${monthLabel(row.period)}</b><small>${status}</small></span><strong>${row.future?money(row.advance?.rate||row.amount):row.billExists?money(row.amount):"—"}</strong></label>`;
                 }).join("")}
               </div>
               <small class="muted fixed-help">Wajib berurutan. Centang bulan pertama yang belum lunas, lalu bulan berikutnya. Tidak bisa melompati bulan.</small>
@@ -96,7 +96,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           <div class="summary-line"><span>Sisa tagihan Air setelah pembayaran</span><b id="sumAirShort">${money(Math.max(0,airGross-airDepositUsed))}</b></div>
           <div class="summary-line"><span><b>Total tunai yang diterima</b></span><b id="sumTotal">${money(0)}</b></div>
         </div>
-        <p class="muted-note payment-note">Kas RT dan Sampah selalu dibayar penuh sesuai nominal bulan yang dicentang. Air dapat dibayar sebagian; kelebihan pembayaran Air masuk ke deposit Air.</p>
+        <p class="muted-note payment-note">Kas RT dan Sampah dibayar penuh dan berurutan. Bulan mendatang dapat dibayar di muka dengan tarif dikunci saat transaksi. Air dapat dibayar sebagian; kelebihan pembayaran Air masuk ke deposit Air.</p>
         <button id="savePayment" class="btn primary full" type="button">Simpan pembayaran</button>`;
       const allFixedChecks=[...box.querySelectorAll(".fixed-month-check")];
       const airInput=box.querySelector(".air-payment-amount");
@@ -236,7 +236,9 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
           updates[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]={id:paymentRef.key,householdId:id,householdLabel:homes.find(h=>h.id===id)?.block||"",period:paymentPeriod,date,method:box.querySelector("#paymentMethod").value,note:box.querySelector("#paymentNote").value.trim(),items,cashReceived:totalCash,depositUsed:totalDepositUsed,appliedToBills:totalApplied,surplusDeposit:totalSurplus,recordedBy:currentUser?.uid||null,createdAt:timestamp};
           const auditRef=push(ref(db,"audit_logs"));
           updates[`audit_logs/${auditRef.key}`]={type:"payment_recorded",paymentId:paymentRef.key,householdId:id,period:paymentPeriod,recordedBy:currentUser?.uid||null,createdAt:timestamp};
-          await writeAndVerify(updates,[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`]);
+          const verifyPaths=[`paymentsByMonth/${paymentPeriod}/${paymentRef.key}`];
+          for(const cat of fixedCategories)for(const item of selected[cat])if(item.future)verifyPaths.push(`fixed_advance_payments/${id}/${item.period}/${cat}`);
+          await writeAndVerify(updates,verifyPaths);
           primarySaved=true;
           for(const item of summaryDeltas)await applyMonthlySummaryDelta(paymentPeriod,item.id,{type:"income",category:item.category,amount:item.amount,date,description:item.description});
           for(const cat of categories){
