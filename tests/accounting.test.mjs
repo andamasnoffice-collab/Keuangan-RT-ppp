@@ -39,3 +39,13 @@ test("ledger and cash flow exclude invoices and deposit applications from cash m
  assert.equal(ledger.balanced,true);assert.equal(tb.balanced,true);
  assert.equal(flow.inflow,60000);assert.equal(flow.outflow,5000);assert.equal(flow.net,55000);
 });
+
+test("future fixed prepayment is cash received but not recognized as income until invoice application",()=>{
+ const {paymentRecognizedCash}=await import("../assets/js/accounting.js");
+ assert.equal(paymentRecognizedCash({cash:100000,applied:100000,advance:true}),0);
+ assert.equal(paymentRecognizedCash({cash:100000,applied:100000}),100000);
+});
+test("air overpayment recognizes only cash applied to receivables, not deposit surplus",()=>{
+ const {paymentRecognizedCash}=await import("../assets/js/accounting.js");
+ assert.equal(paymentRecognizedCash({cash:70000,applied:70000,cashApplied:50000}),50000);
+});
