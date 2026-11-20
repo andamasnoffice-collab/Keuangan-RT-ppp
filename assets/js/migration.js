@@ -120,12 +120,12 @@ async function saveMigration(){
     const [existingArrears,existingDeposits,balances]=await Promise.all([read("arrearsLedger"),read("deposits"),read("category_balances")]);
     for(const x of parsed.arrears){
       const old=existingArrears?.[x.householdId]?.[x.period]?.[x.category];
-      if(Number(old)>0)throw new Error("Sudah ada tunggakan pada "+x.block+" "+x.period+" "+x.category+". Tidak ditimpa.");
+      if(old!==undefined&&old!==null)throw new Error("Sudah ada catatan tunggakan pada "+x.block+" "+x.period+" "+x.category+". Tidak ditimpa.");
       updates[`arrearsLedger/${x.householdId}/${x.period}/${x.category}`]=x.amount;
     }
     for(const x of parsed.deposits){
       for(const cat of categories){
-        if(Number(existingDeposits?.[x.householdId]?.[cat])>0)throw new Error("Deposit "+x.block+" "+labels[cat]+" sudah ada. Tidak ditimpa.");
+        if(existingDeposits?.[x.householdId]?.[cat]!==undefined&&existingDeposits?.[x.householdId]?.[cat]!==null)throw new Error("Deposit "+x.block+" "+labels[cat]+" sudah memiliki catatan. Tidak ditimpa.");
         if(x.values[cat]>0)updates[`deposits/${x.householdId}/${cat}`]=x.values[cat];
       }
       for(const cat of categories){
@@ -139,11 +139,24 @@ async function saveMigration(){
       if(Number(old.balance)||Number(old.income)||Number(old.expense))throw new Error("Saldo kategori "+x.category+" sudah memiliki mutasi. Migrasi saldo kas dibatalkan untuk mencegah penimpaan.");
       updates[`category_balances/${x.category}`]={balance:x.amount,income:0,expense:0,openingBalance:x.amount,openingBalanceDate:"2026-10-31",openingMigrationId:batchId,updatedAt:now};
     }
-    const summaryByHouse={};
-    for(const x of parsed.arrears){summaryByHouse[x.householdId]??={kas:0,air:0,sampah:0,periodCount:0};summaryByHouse[x.householdId][x.category]+=x.amount;}
-    for(const [id,s] of Object.entries(summaryByHouse)){
-      s.total=s.kas+s.air+s.sampah;s.periodCount=new Set(parsed.arrears.filter(x=>x.householdId===id&&x.amount>0).map(x=>x.period)).size;s.updatedAt=now;
-      updates[`arrearsSummary/${id}`]=s;
+    const mergedLedger=structuredClone(existingArrears||{});
+    for(const x of parsed.arrears){
+      mergedLedger[x.householdId]??={};
+      mergedLedger[x.householdId][x.period]??={};
+      mergedLedger[x.householdId][x.period][x.category]=x.amount;
+      mergedLedger[x.householdId][x.period].updatedAt=now;
+    }
+    const affectedHouseholds=new Set(parsed.arrears.map(x=>x.householdId));
+    for(const id of affectedHouseholds){
+      const summary={kas:0,air:0,sampah:0,total:0,periodCount:0,updatedAt:now};
+      for(const [period,row] of Object.entries(mergedLedger[id]||{})){
+        if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(period))continue;
+        let hasDue=false;
+        for(const cat of categories){const amount=Math.max(0,Number(row?.[cat])||0);summary[cat]+=amount;if(amount>0)hasDue=true;}
+        if(hasDue)summary.periodCount++;
+      }
+      summary.total=summary.kas+summary.air+summary.sampah;
+      updates[`arrearsSummary/${id}`]=summary;
     }
     const record={id:batchId,status:"completed",openingDate:"2026-10-31",goLivePeriod:"2026-11",source:"Buku manual",arrears:parsed.arrears,deposits:parsed.deposits,cash:parsed.cash,recordedBy,createdAt:now};
     updates[`opening_migration_records/${batchId}`]=record;
@@ -152,7 +165,8 @@ async function saveMigration(){
     $("#migrationPreview").insertAdjacentHTML("beforeend",'<p class="pill success">Migrasi tersimpan.</p>');
     button.textContent="Migrasi selesai";
   }catch(err){
-    await update(lock,{status:"failed",failedAt:Date.now(),error:String(err.message||err)});
+    const latest=await read("opening_migrations/2026-10").catch(()=>null);
+    if(latest?.status!=="completed")await update(lock,{status:"failed",failedAt:Date.now(),error:String(err.message||err)});
     button.disabled=false;button.textContent="Sahkan migrasi saldo awal";throw err;
   }
 }
