@@ -500,7 +500,7 @@ async function handleHouseholdImport(event){
           row.members.forEach((member,index)=>members[`m${index+1}`]={...member,status:"active"});
           const openingArrears=row.arrears;
           const hasArrears=Object.values(openingArrears).some(v=>v>0);
-          const data={billingStartPeriod:row.billingStartPeriod||importSettings.goLivePeriod||monthKey(),block:row.block,headName:row.headName,address:row.address,phone:row.phone,whatsapp:{primaryNumber:row.whatsapp||row.phone||"",enabled:true},initialWaterMeter:row.initialWaterMeter,currentWaterMeter:row.initialWaterMeter,status:row.status,members,openingArrears,openingArrearsPeriod:hasArrears?row.period:null,openingArrearsRecorded:hasArrears,importedAt:Date.now(),importedBy:currentUser?.uid||null};
+          const data={billingStartPeriod:row.billingStartPeriod||(hasArrears?row.period:(importSettings.goLivePeriod||monthKey())),block:row.block,headName:row.headName,address:row.address,phone:row.phone,whatsapp:{primaryNumber:row.whatsapp||row.phone||"",enabled:true},initialWaterMeter:row.initialWaterMeter,currentWaterMeter:row.initialWaterMeter,status:row.status,members,openingArrears,openingArrearsPeriod:hasArrears?row.period:null,openingArrearsRecorded:hasArrears,importedAt:Date.now(),importedBy:currentUser?.uid||null};
           const id=await saveHousehold(data);
           if(hasArrears)for(const cat of ["kas","air","sampah"])if(openingArrears[cat]>0)await setHouseholdArrearPeriod(id,row.period,cat,openingArrears[cat]);
           await syncHouseholdBillingHistory(id);
