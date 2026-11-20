@@ -42,3 +42,15 @@ Menu Pengaturan menyimpan tarif Kas RT, administrasi Air, tarif pemakaian per mÂ
 ### Pembayaran di muka Kas RT dan Sampah
 
 Pembayaran Kas RT dan Sampah dapat dialokasikan ke bulan mendatang tanpa menunggu tagihan bulanan dibuat. Catatan disimpan per rumah/periode/kategori pada `fixed_advance_payments`, dengan nominal dan tarif dikunci pada tanggal pembayaran. Saat `createMonthlyBills` dijalankan untuk periode tersebut, tagihan dibuat menggunakan tarif yang terkunci dan langsung berstatus lunas; pendapatan tidak dicatat ulang karena sudah masuk pada bulan transaksi pembayaran. Pembayaran tetap penuh dan berurutan. Air tidak memakai mekanisme ini.
+
+
+## Migrasi pembukuan manual (saldo pembuka November 2026)
+
+Menu **Migrasi Pembukuan** memindahkan posisi buku manual per 31 Oktober 2026 sebelum pencatatan digital dimulai pada November 2026. Gunakan file template Excel dengan tiga sheet:
+- **Tunggakan**: satu baris per rumah/periode/kategori, berisi hanya sisa tagihan yang belum dibayar (Kas RT, Air, Sampah).
+- **Deposit**: satu baris per rumah, saldo deposit per kategori; tetap terpisah dari kas operasional.
+- **Saldo Kas**: saldo nyata pembuka per kategori. Nilai ini bukan pendapatan November.
+
+Migrasi membuat rincian pada `arrearsLedger` dan `arrearsSummary`, saldo warga pada `deposits` beserta `deposit_ledger`, saldo pembuka pada `category_balances`, serta arsip batch pada `opening_migration_records` dan pengunci `opening_migrations/2026-10`. Migrasi tidak membuat transaksi pemasukan historis, tidak mengubah tagihan atau pembayaran yang sudah ada, dan tidak memindahkan deposit ke saldo operasional. Batch yang telah selesai tidak dapat diimpor ulang.
+
+**Peringatan lingkungan:** `assets/js/migration.js` memblokir penyimpanan jika Firebase project ID masih `keuangan-rt-ppp` (produksi). Pada branch audit ini pratinjau file dapat diuji, tetapi penyimpanan hanya dapat diaktifkan setelah aplikasi diarahkan ke proyek Firebase uji yang terpisah. Jangan mengubah konfigurasi produksi untuk pengujian.
