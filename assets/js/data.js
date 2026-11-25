@@ -588,6 +588,41 @@ export async function saveBillingSettings(values) {
   return clean;
 }
 
+async function calculateFinancialPosition({balances=null,deposits=null,advances=null}={}) {
+  const [cashRows,depositRows,advanceRows]=await Promise.all([
+    balances===null?read("category_balances"):balances,
+    deposits===null?read("deposits"):deposits,
+    advances===null?read("fixed_advance_payments"):advances
+  ]);
+  const advancePeriods=[...new Set(Object.values(advanceRows||{}).flatMap(row=>Object.keys(row||{}).filter(validPeriod)))];
+  const billRowsByPeriod={};
+  await Promise.all(advancePeriods.map(async period=>{billRowsByPeriod[period]=await read("bills/"+period)||{};}));
+  const result={};
+  for(const category of ["kas","air","sampah"]){
+    const cashBalance=Number(cashRows?.[category]?.balance)||0;
+    const depositLiability=Object.values(depositRows||{}).reduce((sum,row)=>sum+Math.max(0,Number(row?.[category])||0),0);
+    let advanceLiability=0;
+    for(const [householdId,periods] of Object.entries(advanceRows||{})){
+      for(const [period,categories] of Object.entries(periods||{})){
+        const advance=categories?.[category];
+        if(!advance||!validPeriod(period))continue;
+        const amount=Math.max(0,Number(advance.amount)||0);
+        if(!amount)continue;
+        const bill=billRowsByPeriod[period]?.[householdId]?.[category];
+        const applied=!!bill&&(bill.advancePaymentId===advance.paymentId||(!!bill.advancePaidAt&&Number(bill.paidAmount)>=amount));
+        if(!applied)advanceLiability+=amount;
+      }
+    }
+    result[category]={cashBalance,depositLiability,advanceLiability,availableBalance:cashBalance-depositLiability-advanceLiability};
+  }
+  result.totals=["kas","air","sampah"].reduce((out,category)=>{
+    for(const key of ["cashBalance","depositLiability","advanceLiability","availableBalance"])out[key]+=result[category][key];
+    return out;
+  },{cashBalance:0,depositLiability:0,advanceLiability:0,availableBalance:0});
+  return result;
+}
+export async function getFinancialPosition(){return calculateFinancialPosition();}
+
 export async function createExpense({category, amount, date, description, proof, recordedBy}) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if (!["kas","air","sampah"].includes(category)) throw new Error("Pilih sumber dana yang valid.");
@@ -599,10 +634,12 @@ export async function createExpense({category, amount, date, description, proof,
   if(!validPeriod(period)) throw new Error("Tanggal pengeluaran tidak valid.");
   const expenseRef = push(root(`expensesByMonth/${period}`));
   const txRef = push(root(`transactionsByMonth/${period}`));
-  const balSnap = await get(root(`category_balances/${category}`));
-  const balance = balSnap.exists() ? balSnap.val() : {};
-  const currentBalance = Number(balance.balance) || 0;
-  if (currentBalance < value) throw new Error(`Saldo kategori tidak mencukupi. Saldo tersedia ${"Rp "+new Intl.NumberFormat("id-ID").format(currentBalance)}; pengeluaran yang diminta ${"Rp "+new Intl.NumberFormat("id-ID").format(value)}. Periksa sumber dana, saldo awal kategori, dan pemasukan terlebih dahulu.`);
+  const position=await calculateFinancialPosition();
+  const balanceSnap=await get(root(`category_balances/${category}`));
+  const balance=balanceSnap.exists()?balanceSnap.val():{};
+  const currentBalance=Number(balance.balance)||0;
+  const availableBalance=Number(position[category]?.availableBalance)||0;
+  if(availableBalance<value) throw new Error(`Dana bebas ${"Rp "+new Intl.NumberFormat("id-ID").format(availableBalance)} tidak mencukupi. Saldo kas ${"Rp "+new Intl.NumberFormat("id-ID").format(currentBalance)}, deposit warga ${"Rp "+new Intl.NumberFormat("id-ID").format(position[category]?.depositLiability||0)}, dan uang muka ${"Rp "+new Intl.NumberFormat("id-ID").format(position[category]?.advanceLiability||0)}.`);
   const timestamp = Date.now();
   const record = {id:expenseRef.key, category, amount:value, date:date || new Date().toISOString().slice(0,10), description:String(description).trim(), proof:String(proof).trim(), recordedBy:recordedBy || null, createdAt:timestamp};
   const updates = {};
@@ -706,9 +743,10 @@ export async function getPublicBills() {
 export async function buildAnnualSummary(year, recordedBy=null) {
   const y=Number(year);
   if(!Number.isInteger(y)||y<2000||y>new Date().getFullYear()) throw new Error("Tahun rekap tidak valid.");
-  const [settings,allMonthly,balances,deposits,arrears]=await Promise.all([
-    getBillingSettings(),read("financeSummaryByMonth"),read("category_balances"),read("deposits"),read("arrearsSummary")
+  const [settings,allMonthly,balances,deposits,advances,arrears]=await Promise.all([
+    getBillingSettings(),read("financeSummaryByMonth"),read("category_balances"),read("deposits"),read("fixed_advance_payments"),read("arrearsSummary")
   ]);
+  const position=await calculateFinancialPosition({balances,deposits,advances});
   const goLive=validPeriod(settings?.goLivePeriod)?settings.goLivePeriod:`${y}-01`;
   const yearStart=`${y}-01`,periodStart=goLive>yearStart?goLive:yearStart;
   if(periodStart.slice(0,4)!==String(y))throw new Error("Tahun ini berada sebelum bulan mulai aplikasi.");
@@ -733,21 +771,28 @@ export async function buildAnnualSummary(year, recordedBy=null) {
   const arrearsTotals={kas:0,sampah:0,air:0,total:0};
   for(const row of Object.values(arrears||{}))for(const cat of categories)arrearsTotals[cat]+=Math.max(0,Number(row?.[cat])||0);
   arrearsTotals.total=categories.reduce((sum,cat)=>sum+arrearsTotals[cat],0);
-  const payload={year:y,periodStart,periodEnd,byCategory,arrearsAtSnapshot:arrearsTotals,operatingBalanceAtSnapshot:categories.reduce((sum,cat)=>sum+(Number(balances?.[cat]?.balance)||0),0),depositLiabilityAtSnapshot:categories.reduce((sum,cat)=>sum+byCategory[cat].depositLiability,0),generatedAt:Date.now(),generatedBy:recordedBy||null,version:2};
+  const payload={year:y,periodStart,periodEnd,byCategory,arrearsAtSnapshot:arrearsTotals,cashBalanceAtSnapshot:position.totals.cashBalance,operatingBalanceAtSnapshot:position.totals.availableBalance,depositLiabilityAtSnapshot:position.totals.depositLiability,advanceLiabilityAtSnapshot:position.totals.advanceLiability,generatedAt:Date.now(),generatedBy:recordedBy||null,version:2};
   await writeAndVerify({[`annual_summaries/${y}`]:payload},[`annual_summaries/${y}`]);
   return payload;
 }
 
 export async function refreshPublicSnapshot(currentPeriod, householdsOverride=null) {
   if(!validPeriod(currentPeriod)) throw new Error("Periode publik tidak valid.");
-  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger]=await Promise.all([
+  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances]=await Promise.all([
     householdsOverride||getHouseholds(),
     read("category_balances"),
     read("financeSummaryByMonth"),
     read("arrearsSummary"),
-    read("arrearsLedger")
+    read("arrearsLedger"),
+    read("deposits"),
+    read("fixed_advance_payments")
   ]);
-  return await publishPublicSnapshot(currentPeriod,homes||{},balances||{},financeSummary||{},arrearsSummary||{},arrearsLedger||{});
+  const position=await calculateFinancialPosition({balances,deposits,advances});
+  const publicBalances={...(balances||{})};
+  for(const category of ["kas","air","sampah"]){
+    publicBalances[category]={...(balances?.[category]||{}),balance:position[category].availableBalance,cashBalance:position[category].cashBalance,depositLiability:position[category].depositLiability,advanceLiability:position[category].advanceLiability};
+  }
+  return await publishPublicSnapshot(currentPeriod,homes||{},publicBalances,financeSummary||{},arrearsSummary||{},arrearsLedger||{});
 }
 
 export async function refreshPublicSnapshotSafely() {
