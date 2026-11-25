@@ -284,18 +284,34 @@ async function renderPublicBills(c, authenticated){
     acc.kas+=Number(x.kas)||0; acc.sampah+=Number(x.sampah)||0; acc.air+=Number(x.air)||0; acc.total+=Number(x.total)||0;
     return acc;
   },{kas:0,sampah:0,air:0,total:0});
-  c.innerHTML=`<div class="section-head"><h3>Daftar Tunggakan</h3><span class="pill">Akumulasi sampai ${monthKey()}</span></div>
+  const categoryLine=(label,detail)=>{
+    const amount=Number(detail?.amount)||0;
+    if(amount<=0)return "";
+    const count=Number(detail?.periodCount)||0;
+    const periods=Array.isArray(detail?.periods)?detail.periods:[];
+    const suffix=periods.length?periods.map(escapeHtml).join(", "):(count+" bulan");
+    const usage=label==="Air"&&Number(detail?.usageM3)>0?`<span class="arrears-usage">${Number(detail.usageM3).toLocaleString("id-ID",{maximumFractionDigits:3})} m³</span>`:"";
+    return `<div class="arrears-category-row"><div><b>${label}</b><small>${suffix}${usage}</small></div><strong>${money(amount)}</strong></div>`;
+  };
+  c.innerHTML=`<div class="section-head"><div><h3>Daftar Tunggakan</h3><p class="tiny muted">Rincian kewajiban setiap rumah</p></div><span class="pill">Sampai ${monthKey()}</span></div>
   <div class="grid stats">
-    ${card("Total tunggakan",money(totals.total),"Tagihan berjalan + seluruh tunggakan sebelumnya")}
+    ${card("Total tunggakan",money(totals.total),"Akumulasi semua rumah")}
     ${card("Kas RT",money(totals.kas),"Sisa kewajiban")}
     ${card("Sampah",money(totals.sampah),"Sisa kewajiban")}
     ${card("Air",money(totals.air),"Sisa kewajiban")}
   </div>
-  <div class="muted-note">Setiap rumah ditampilkan satu kali. Nominal merupakan akumulasi tagihan bulan berjalan dan seluruh bulan sebelumnya yang belum lunas, setelah dikurangi pembayaran yang sudah tercatat. Tidak menampilkan nama kepala keluarga, nomor telepon, atau anggota keluarga.</div>
-  <div id="publicBillTable" class="table-wrap"></div>`;
-  $("#publicBillTable").innerHTML=`<table><thead><tr><th>Blok / Rumah</th><th>Kas RT</th><th>Sampah</th><th>Air</th><th>Bulan tertunggak</th><th>Total harus dibayar</th></tr></thead><tbody>
-    ${list.map(x=>`<tr><td>${escapeHtml(x.label||"Rumah")}</td><td>${money(x.kas||0)}</td><td>${money(x.sampah||0)}</td><td>${money(x.air||0)}</td><td>${Number(x.periodCount)||0}</td><td class="amount">${money(x.total||0)}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">Tidak ada tunggakan sampai bulan berjalan.</td></tr>'}
-    </tbody></table>`;
+  <div class="muted-note">Rincian menunjukkan sisa tagihan yang belum lunas setelah dikurangi pembayaran. Air menampilkan pemakaian meter (m³) jika data meter periode tersebut tersedia. Nama kepala keluarga dan nomor telepon tidak ditampilkan.</div>
+  <div id="publicBillCards" class="arrears-card-list">
+    ${list.map(x=>{
+      const details=x.details||{};
+      const lines=categoryLine("Kas RT",details.kas)+categoryLine("Sampah",details.sampah)+categoryLine("Air",details.air);
+      return `<article class="panel arrears-house-card">
+        <div class="arrears-house-head"><div><span class="eyebrow">BLOK / RUMAH</span><h4>${escapeHtml(x.label||"Rumah")}</h4></div><span class="pill">${Number(x.periodCount)||0} bulan tertunggak</span></div>
+        <div class="arrears-category-list">${lines||'<p class="muted tiny">Tidak ada rincian kategori.</p>'}</div>
+        <div class="arrears-total"><span>Total tunggakan</span><strong>${money(x.total||0)}</strong></div>
+      </article>`;
+    }).join("")||'<div class="panel empty">Tidak ada tunggakan sampai bulan berjalan.</div>'}
+  </div>`;
 }
 
 function escapeHtml(value){
