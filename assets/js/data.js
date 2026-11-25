@@ -771,7 +771,7 @@ export async function buildAnnualSummary(year, recordedBy=null) {
       expense+=Math.max(0,Number(item.expenses)||0);
     }
     const deposit=Object.values(deposits||{}).reduce((sum,row)=>sum+(Number(row?.[cat])||0),0);
-    byCategory[cat]={openingBalance:opening,income,expenses:expense,closingOperatingBalance:opening+income-expense,depositLiability:deposit};
+    byCategory[cat]={openingBalance:opening,income,expenses:expense,closingOperatingBalance:opening+income-expense,depositLiability:deposit,cashBalance:position[cat].cashBalance,advanceLiability:position[cat].advanceLiability};
   }
   const arrearsTotals={kas:0,sampah:0,air:0,total:0};
   for(const row of Object.values(arrears||{}))for(const cat of categories)arrearsTotals[cat]+=Math.max(0,Number(row?.[cat])||0);
