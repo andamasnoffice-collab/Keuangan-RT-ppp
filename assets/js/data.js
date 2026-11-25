@@ -805,7 +805,7 @@ export async function refreshPublicSnapshotSafely() {
   catch(error) { console.error("Sinkronisasi tampilan publik tertunda:",error); return false; }
 }
 
-const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings"];
+const MASTER_DATA_NODES=["households","fixed_advance_payments","bills","payments","paymentsByMonth","deposits","deposit_ledger","water_readings","expenses","expensesByMonth","transactions","transactionsByMonth","category_balances","whatsapp_notifications","summaries","financeSummaryByMonth","annual_summaries","arrearsLedger","arrearsSummary","billing_runs","water_import_runs","public_views","settings","journal_entries","opening_migrations","opening_migration_records"];
 export async function deleteMasterData({mode,period,recordedBy}) {
   if(!db) throw new Error("Firebase belum dikonfigurasi.");
   const stamp=Date.now(),updates={};
@@ -858,7 +858,7 @@ export async function deleteMasterData({mode,period,recordedBy}) {
     for(const [targetPeriod,categories] of Object.entries(periods||{})){
       for(const category of ["kas","sampah"]){
         const advance=categories?.[category];
-        if(!advance||periodOf(advance)!==p)continue;
+        if(!advance||String(advance.date||"").slice(0,7)!==p)continue;
         const targetBill=await read(`bills/${targetPeriod}/${householdId}/${category}`);
         if(targetBill?.advancePaymentId&&targetBill.advancePaymentId===advance.paymentId){
           throw new Error(`Periode ${p} memiliki pembayaran di muka yang sudah diterapkan ke tagihan ${targetPeriod} (${category}). Periksa dan batalkan penerapan tagihan tujuan terlebih dahulu.`);
