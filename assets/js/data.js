@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal, calculateAvailableBalance } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -613,7 +613,7 @@ async function calculateFinancialPosition({balances=null,deposits=null,advances=
         if(!applied)advanceLiability+=amount;
       }
     }
-    result[category]={cashBalance,depositLiability,advanceLiability,availableBalance:cashBalance-depositLiability-advanceLiability};
+    result[category]={cashBalance,depositLiability,advanceLiability,availableBalance:calculateAvailableBalance({cashBalance,depositLiability,advanceLiability})};
   }
   result.totals=["kas","air","sampah"].reduce((out,category)=>{
     for(const key of ["cashBalance","depositLiability","advanceLiability","availableBalance"])out[key]+=result[category][key];
