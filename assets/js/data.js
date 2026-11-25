@@ -207,6 +207,7 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
   };
   await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`]);
   await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>applyMonthlySummaryDelta(period,"deposit_auto_"+paymentRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan tagihan Air dari deposit"}));
   return use;
 }
 
@@ -282,7 +283,7 @@ export async function createMonthlyBills(period, recordedBy) {
     const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
     if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
     if(Object.keys(existing).length) throw new Error("Data tagihan periode ini sudah ada. Proses dihentikan agar tidak menimpa tagihan.");
-    const updates={},depositSummary={kas:0,air:0,sampah:0};
+    const updates={},depositSummary={kas:0,air:0,sampah:0},summaryDeltas=[];
     const now=Date.now();
     for(const [id,h] of active){
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
@@ -326,6 +327,7 @@ export async function createMonthlyBills(period, recordedBy) {
         const used=Math.min(available,Math.max(0,Number(row[cat].remaining)||0));
         if(used>0){
           applied[cat]=used;depositSummary[cat]+=used;
+          summaryDeltas.push({id:"deposit_auto_"+period+"_"+id+"_air",category:"air",amount:used,description:"Pelunasan tagihan Air dari deposit"});
           row[cat].paidAmount=Number(row[cat].paidAmount||0)+used;row[cat].remaining=Math.max(0,Number(row[cat].remaining||0)-used);row[cat].depositAppliedAmount=Number(row[cat].depositAppliedAmount||0)+used;
           row[cat].status=row[cat].remaining===0?"paid":"partial";
           updates[`deposits/${id}/${cat}`]=available-used;
@@ -341,6 +343,7 @@ export async function createMonthlyBills(period, recordedBy) {
         const advanceAmount=cat==="kas"?kasAdvance:cat==="sampah"?sampahAdvance:0;
         const advanceJournal=buildAdvanceApplicationJournal({id:"advance_apply_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:advanceAmount,createdAt:now});
         if(advanceJournal)updates["journal_entries/"+advanceJournal.id]=advanceJournal;
+        if(advanceAmount>0)summaryDeltas.push({id:"advance_apply_"+period+"_"+id+"_"+cat,category:cat,amount:advanceAmount,description:"Penerapan pembayaran di muka "+cat});
       }
       if(Object.keys(applied).length){
         const paymentRef=push(root(`paymentsByMonth/${period}`));
@@ -362,6 +365,7 @@ export async function createMonthlyBills(period, recordedBy) {
     if(Object.keys(updates).some(path=>path.startsWith(`paymentsByMonth/${period}/`))) verifyPaths.push(`paymentsByMonth/${period}`);
     await writeAndVerify(updates,verifyPaths);
     primaryCommitted=true;
+    for(const item of summaryDeltas)await retryIdempotent(()=>applyMonthlySummaryDelta(period,item.id,{type:"income",category:item.category,amount:item.amount,date:period+"-01",description:item.description}));
     for(const [id,row] of active.map(([id])=>[id,updates[`bills/${period}/${id}`]])){
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"kas",row.kas.remaining));
       await retryIdempotent(()=>setHouseholdArrearPeriod(id,period,"air",row.air.remaining));
@@ -756,7 +760,8 @@ export async function buildAnnualSummary(year, recordedBy=null) {
   for(let p=periodStart;p<=periodEnd;p=nextMonth(p))periods.push(p);
   const categories=["kas","sampah","air"],byCategory={};
   for(const cat of categories){
-    const baseOpening=Number(balances?.[cat]?.openingBalance ?? settings?.openingBalances?.[cat])||0;
+    const netSinceGoLive=Object.entries(allMonthly||{}).filter(([period])=>period>=goLive&&period<=currentPeriod).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0)-(Number(row?.byCategory?.[cat]?.expenses)||0),0);
+    const baseOpening=position[cat].availableBalance-netSinceGoLive;
     const netBeforeYear=Object.entries(allMonthly||{}).filter(([period])=>period>=goLive&&period<yearStart).reduce((sum,[,row])=>sum+(Number(row?.byCategory?.[cat]?.income)||0)-(Number(row?.byCategory?.[cat]?.expenses)||0),0);
     const opening=baseOpening+netBeforeYear;
     let income=0,expense=0;
