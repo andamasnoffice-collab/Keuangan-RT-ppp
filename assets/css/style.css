@@ -574,3 +574,25 @@ td{color:var(--text)}
 @media(max-width:600px){.payment-month-checklist{grid-template-columns:repeat(3,minmax(0,1fr));}.pay-month-row{min-height:54px;padding:7px 3px;}}
 
 .pay-month-row.is-waived{border-color:color-mix(in srgb,var(--amber) 45%,var(--line));background:color-mix(in srgb,var(--amber) 9%,var(--surface));}
+
+/* Clearer finance figures and compact mobile forms */
+.expense-position-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:12px 0 16px;padding:12px;background:#f4f8fa;border:1px solid var(--line);border-radius:12px}
+.expense-position-grid>div{display:grid;gap:5px;min-width:0}
+.expense-position-grid small{font-size:11px;color:var(--muted)}
+.expense-position-grid b{font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.expense-position-grid .expense-available{padding-left:12px;border-left:1px solid var(--line)}
+.expense-position-grid .expense-available b{color:var(--green);font-size:17px}
+.payment-quick-guide{margin:12px 0 16px;line-height:1.55}
+.payment-quick-guide ol{margin:7px 0 0;padding-left:20px}
+.payment-quick-guide li{margin:4px 0}
+.expense-entry-panel .field{margin:12px 0}
+.expense-entry-panel #expenseForm>.btn{min-height:48px}
+.category-card .balance{font-size:21px}
+@media(max-width:760px){
+ .expense-position-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .expense-position-grid .expense-available{padding-left:0;border-left:0}
+ .expense-position-grid b{font-size:13px}
+ .expense-position-grid .expense-available b{font-size:17px}
+ .payment-quick-guide{font-size:12px}
+ .expense-entry-panel{padding:14px}
+}

@@ -15,6 +15,9 @@ export const ACCOUNT = Object.freeze({
 const CATS=["kas","air","sampah"];
 const amount=n=>{const v=Number(n);if(!Number.isSafeInteger(v)||v<0)throw new Error("Nominal jurnal harus bilangan bulat rupiah >= 0.");return v;};
 const line=(account,debit=0,credit=0,meta={})=>({account,debit:amount(debit),credit:amount(credit),...meta});
+export function calculateAvailableBalance({cashBalance=0,depositLiability=0,advanceLiability=0}={}){
+  return amount(cashBalance)-amount(depositLiability)-amount(advanceLiability);
+}
 export function assertBalanced(lines){
   if(!Array.isArray(lines)||lines.length<2)throw new Error("Jurnal minimal memiliki dua baris.");
   const debit=lines.reduce((s,x)=>s+amount(x.debit||0),0),credit=lines.reduce((s,x)=>s+amount(x.credit||0),0);
@@ -52,6 +55,8 @@ export function buildPaymentJournal({id,period,date,householdId,items,createdAt}
   for(const item of items||[]){
     const cat=item.category||item.cat;if(!CATS.includes(cat))throw new Error("Kategori pembayaran tidak valid.");
     const cash=amount(item.cash||0),depositUsed=amount(item.depositUsed||0),applied=amount(item.applied||0),surplus=amount(item.surplus||0);
+    if(cat!=="air"&&(depositUsed||surplus))throw new Error("Deposit hanya diperbolehkan untuk kategori Air.");
+    if(item.advance&&cat==="air")throw new Error("Pembayaran di muka hanya berlaku untuk Kas RT dan Sampah.");
     if(cash)lines.push(line(ACCOUNT["CASH_"+cat.toUpperCase()],cash,0,{category:cat}));
     if(depositUsed)lines.push(line(ACCOUNT["DEPOSIT_"+cat.toUpperCase()],depositUsed,0,{category:cat,householdId}));
     if(applied)lines.push(line(item.advance?ACCOUNT["ADVANCE_"+cat.toUpperCase()]:ACCOUNT["AR_"+cat.toUpperCase()],0,applied,{category:cat,householdId}));
@@ -68,7 +73,7 @@ export function paymentRecognizedCash(item){
   return explicit===undefined?Math.min(cash,applied):Math.min(cash,amount(explicit));
 }
 export function buildAdvanceApplicationJournal({id,period,date,householdId,category,amount:rawAmount,createdAt}){
-  if(!CATS.includes(category))throw new Error("Kategori uang muka tidak valid.");
+  if(!["kas","sampah"].includes(category))throw new Error("Uang muka hanya berlaku untuk Kas RT dan Sampah.");
   const n=amount(rawAmount);if(!n)return null;
   return createJournalEntry({id,sourceType:"advance_application",sourceId:id,date,period,householdId,description:"Penerapan pembayaran di muka "+category,createdAt,lines:[
     line(ACCOUNT["ADVANCE_"+category.toUpperCase()],n,0,{category,householdId}),

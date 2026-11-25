@@ -1,7 +1,7 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { buildPaymentJournal, paymentRecognizedCash } from "./accounting.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-auditfix1";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261125-financefix3";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
@@ -17,8 +17,8 @@ const monthLabel=period=>{const [y,m]=period.split("-").map(Number);return new I
 export async function renderPaymentPage(container,{households,monthKey,toast,currentUser}){
   const homes=Object.entries(households||{}).map(([id,h])=>({id,...h})).sort((a,b)=>blockCollator.compare(String(a.block||"").trim(),String(b.block||"").trim()));
   container.innerHTML=`<div class="panel payment-panel">
-    <div class="section-head" style="margin-top:0"><div><h3>Pencatatan pembayaran warga</h3><small class="muted">Kas RT dan Sampah dilunasi penuh per bulan secara berurutan. Air menggunakan nominal dan deposit Air.</small></div><span class="pill success">Satu pintu</span></div>
-    <label class="field full-row">Pilih rumah<select id="payHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${esc(h.id)}">${esc(h.block||"")} · ${esc(h.headName||"")} · ${esc(h.address||"")}</option>`).join("")}</select></label>
+    <div class="section-head" style="margin-top:0"><div><h3>Pencatatan pembayaran warga</h3><small class="muted">Kas RT dan Sampah harus dibayar penuh dan tidak boleh melompati bulan. Air boleh dibayar sebagian; kelebihan otomatis menjadi deposit Air.</small></div><span class="pill success">Satu pintu</span></div>
+    <div class="muted-note payment-quick-guide"><b>Langkah pembayaran</b><ol><li>Pilih rumah.</li><li>Centang bulan Kas RT dan Sampah secara berurutan untuk pelunasan penuh.</li><li>Masukkan jumlah pembayaran Air. Boleh sebagian; kelebihannya menjadi deposit Air.</li></ol></div><label class="field full-row">Pilih rumah<select id="payHouse"><option value="">Pilih blok / nomor rumah</option>${homes.map(h=>`<option value="${esc(h.id)}">${esc(h.block||"")} · ${esc(h.headName||"")} · ${esc(h.address||"")}</option>`).join("")}</select></label>
     <div id="billChecklist"><div class="empty">Pilih rumah untuk menampilkan tagihan.</div></div>
   </div>`;
   const select=container.querySelector("#payHouse");
@@ -238,6 +238,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               const recognizedAirCash=paymentRecognizedCash({cash:airCash,applied:airApplied,cashApplied:airApplied});
               if(recognizedAirCash>0)summaryDeltas.push({id:txRef.key,category:"air",amount:recognizedAirCash,description:desc});
             }
+            if(airDepositUsed>0)summaryDeltas.push({id:"deposit_application_"+paymentRef.key,category:"air",amount:airDepositUsed,description:"Pelunasan tagihan Air dari deposit"});
             totalDepositUsed+=airDepositUsed;totalSurplus+=airSurplus;
             items.push({cat:"air",cash:airCash,cashApplied:airApplied,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
           }

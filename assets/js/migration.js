@@ -44,8 +44,10 @@ function parseWorkbook(wb){
     if(!home)throw new Error('Deposit baris '+(i+2)+': rumah "'+block+'" tidak ditemukan.');
     if(seenDeposit.has(home.id))throw new Error("Deposit rumah "+block+" tercantum lebih dari sekali.");
     seenDeposit.add(home.id);
-    const values={};for(const cat of categories)values[cat]=parseAmount(r[labels[cat]+" (Rp)"]);
-    if(Object.values(values).some(Boolean))deposits.push({householdId:home.id,block:home.block,values});
+    const legacyKas=parseAmount(r["Kas RT (Rp)"]),legacySampah=parseAmount(r["Sampah (Rp)"]);
+    if(legacyKas||legacySampah)throw new Error("Deposit hanya diperbolehkan untuk kategori Air. Hapus nominal Deposit Kas RT dan Sampah pada baris "+(i+2)+".");
+    const values={kas:0,air:parseAmount(r["Air (Rp)"]),sampah:0};
+    if(values.air)deposits.push({householdId:home.id,block:home.block,values});
   }
   const cRows=sheet("Saldo Kas",false);
   for(let i=0;i<cRows.length;i++){
@@ -65,9 +67,9 @@ async function downloadTemplate(){
   const X=await ensureXLSX(),wb=X.utils.book_new();
   const sheets=[
     ["Tunggakan",[["Blok","Periode (YYYY-MM)","Kategori","Sisa Tunggakan (Rp)"],["A-01","2026-03","kas",30000],["A-01","2026-04","sampah",10000]]],
-    ["Deposit",[["Blok","Kas RT (Rp)","Air (Rp)","Sampah (Rp)"],["A-01",0,50000,0]]],
+    ["Deposit",[["Blok","Air (Rp)"],["A-01",50000]]],
     ["Saldo Kas",[["Kategori","Saldo Awal (Rp)"],["kas",1500000],["air",0],["sampah",0]]],
-    ["Panduan",[["PANDUAN MIGRASI PEMBUKUAN MANUAL"],["Tunggakan: satu baris untuk satu rumah, satu bulan, satu kategori. Isi sisa tagihan yang belum dibayar, bukan total tagihan awal."],["Kategori wajib: kas, air, sampah. Periode gunakan YYYY-MM. Baris tanpa tunggakan tidak perlu dimasukkan."],["Deposit: satu baris per rumah. Isi saldo deposit yang masih menjadi hak warga pada tanggal migrasi."],["Saldo Kas: isi saldo operasional nyata per kategori pada tanggal migrasi. Ini saldo pembuka, bukan pemasukan bulan berjalan."],["Jangan masukkan pembayaran yang sudah lunas sebagai tunggakan. Jangan gabungkan deposit warga ke saldo kas operasional."],["Data contoh A-01 hanya contoh; hapus sebelum mengimpor. Blok harus sama persis dengan Master Data Rumah."],["Migrasi tidak mengubah tagihan bulanan atau membuat transaksi pendapatan historis. Catatan sumber buku disimpan pada batch migrasi."]]]
+    ["Panduan",[["PANDUAN MIGRASI PEMBUKUAN MANUAL"],["Tunggakan: satu baris untuk satu rumah, satu bulan, satu kategori. Isi sisa tagihan yang belum dibayar, bukan total tagihan awal."],["Kategori wajib: kas, air, sampah. Periode gunakan YYYY-MM. Baris tanpa tunggakan tidak perlu dimasukkan."],["Deposit: hanya saldo deposit Air yang masih menjadi hak warga. Deposit Kas RT dan Sampah tidak digunakan."],["Saldo Kas: isi saldo kas/bank nyata per kategori pada tanggal migrasi, termasuk uang deposit dan uang muka yang masih tersimpan. Sistem menguranginya sebagai kewajiban untuk menghitung dana bebas. Ini saldo pembuka, bukan pemasukan bulan berjalan."],["Jangan masukkan pembayaran yang sudah lunas sebagai tunggakan. Deposit dan uang muka tidak boleh dicatat sebagai pendapatan; saldo fisiknya tetap termasuk dalam jumlah uang kas/bank jika memang masih tersimpan."],["Data contoh A-01 hanya contoh; hapus sebelum mengimpor. Blok harus sama persis dengan Master Data Rumah."],["Migrasi tidak mengubah tagihan bulanan atau membuat transaksi pendapatan historis. Catatan sumber buku disimpan pada batch migrasi."]]]
   ];
   for(const [name,rows] of sheets){const ws=X.utils.aoa_to_sheet(rows);X.utils.book_append_sheet(wb,ws,name);}
   X.writeFile(wb,"Template_Migrasi_Pembukuan_Manual_Keuangan_RT.xlsx");
@@ -81,7 +83,7 @@ async function renderMigration(c){
   catch(error) { markerReadable=false; console.warn("Migration lock unreadable; preview-only mode.",error); }
   c.innerHTML=`<section class="panel">
     <div class="section-head" style="margin-top:0"><div><h3>Migrasi pembukuan manual</h3><p class="tiny muted">Saldo pembuka per 31 Oktober 2026 · aplikasi mulai mencatat November 2026</p></div><span class="pill ${marker?.status==="completed"?"success":"warning"}">${marker?.status==="completed"?"Sudah dimigrasikan":"Belum dimigrasikan"}</span></div>
-    <div class="muted-note">Gunakan buku manual untuk memindahkan sisa tunggakan per bulan, deposit warga, dan saldo kas operasional. Pembayaran yang sudah lunas tidak dimasukkan sebagai tunggakan.</div>
+    <div class="muted-note">Gunakan buku manual untuk memindahkan sisa tunggakan per bulan, deposit Air, dan saldo kas/bank nyata. Saldo kas/bank harus mencakup uang yang benar-benar masih tersimpan, termasuk uang deposit dan uang muka. Pembayaran yang sudah lunas tidak dimasukkan sebagai tunggakan.</div>
     <div class="toolbar" style="margin:16px 0"><button class="btn secondary" id="migrationTemplate">↓ Unduh Template Excel</button><label class="btn outline file-button" for="migrationFile">Pilih file Excel</label><input id="migrationFile" type="file" accept=".xlsx,.xls" hidden></div>
     <div id="migrationPreview"><div class="empty">Unduh template, isi berdasarkan buku manual, lalu pilih file untuk melihat pratinjau.</div></div>
     ${production?'<div class="muted-note" style="margin-top:16px"><b>Mode aman: hanya pratinjau.</b> Branch ini masih menunjuk proyek Firebase produksi <code>keuangan-rt-ppp</code>. Tombol penyimpanan dinonaktifkan agar migrasi uji tidak menulis atau mengubah data warga produksi. Setelah proyek Firebase uji dikonfigurasi, proses simpan dapat diuji di sana.</div>':""}
@@ -127,11 +129,9 @@ async function saveMigration(){
       updates[`arrearsLedger/${x.householdId}/${x.period}/${x.category}`]=x.amount;
     }
     for(const x of parsed.deposits){
-      for(const cat of categories){
-        if(existingDeposits?.[x.householdId]?.[cat]!==undefined&&existingDeposits?.[x.householdId]?.[cat]!==null)throw new Error("Deposit "+x.block+" "+labels[cat]+" sudah memiliki catatan. Tidak ditimpa.");
-        if(x.values[cat]>0)updates[`deposits/${x.householdId}/${cat}`]=x.values[cat];
-      }
-      for(const cat of categories){
+      if(existingDeposits?.[x.householdId]?.air!==undefined&&existingDeposits?.[x.householdId]?.air!==null)throw new Error("Deposit Air "+x.block+" sudah memiliki catatan. Tidak ditimpa.");
+      if(x.values.air>0)updates[`deposits/${x.householdId}/air`]=x.values.air;
+      for(const cat of ["air"]){
         const amount=x.values[cat];if(amount<=0)continue;
         const entry=push(root("deposit_ledger"));
         updates[`deposit_ledger/${entry.key}`]={householdId:x.householdId,category:cat,amount,before:0,after:amount,type:"opening_balance_migration",date:"2026-10-31",period:"2026-10",batchId,source:"Buku manual",createdAt:now};
