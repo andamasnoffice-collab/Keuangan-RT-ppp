@@ -1,11 +1,11 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261125-financefix3";
-import { renderPaymentPage } from "./payments.js?v=20261125-financefix3";
-import { renderWhatsAppPage } from "./whatsapp.js?v=20261125-financefix3";
-import { renderOpeningMigration } from "./migration.js?v=20261125-financefix3";
-import { cashFlow, trialBalance, summarizeLedger } from "./accounting.js?v=20261125-financefix3";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261126-arrears1";
+import { renderPaymentPage } from "./payments.js?v=20261126-arrears1";
+import { renderWhatsAppPage } from "./whatsapp.js?v=20261126-arrears1";
+import { renderOpeningMigration } from "./migration.js?v=20261126-arrears1";
+import { cashFlow, trialBalance, summarizeLedger } from "./accounting.js?v=20261126-arrears1";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
@@ -249,26 +249,57 @@ async function renderPublicDashboard(c){
 function showPublicFinanceDetail(kind, dashboard){
   const panel=$("#publicFinanceDetail");
   const months=dashboard.financeByMonth||{};
-  const monthKeys=Object.keys(months).sort().reverse();
-  const titleText=kind==="income"?"Rincian pemasukan":kind==="expenses"?"Rincian pengeluaran":`Arus kas kategori ${kind.toUpperCase()}`;
+  const monthKeys=Object.keys(months).filter(x=>/^\d{4}-\d{2}$/.test(x)).sort().reverse();
+  const years=[...new Set(monthKeys.map(x=>x.slice(0,4)))].sort().reverse();
+  const categoryLabels={kas:"Kas RT",air:"Air",sampah:"Sampah"};
+  const titleText=kind==="income"?"Rincian seluruh pemasukan":kind==="expenses"?"Rincian seluruh pengeluaran":`Rincian keuangan ${categoryLabels[kind]||kind.toUpperCase()}`;
   panel.hidden=false;
-  panel.innerHTML=`<div class="section-head"><h3>${titleText}</h3><button type="button" class="btn outline" id="closePublicDetail">Tutup</button></div>
-    <label class="field">Pilih bulan<select id="publicFinanceMonth">${monthKeys.map(m=>`<option value="${m}">${m}</option>`).join("")||'<option value="">Belum ada data</option>'}</select></label>
-    <div id="publicFinanceRows"></div>`;
+  panel.innerHTML=`<div class="section-head"><div><h3>${titleText}</h3><p class="tiny muted">Pilih tahun untuk melihat rekap dan rincian per bulan.</p></div><button type="button" class="btn outline" id="closePublicDetail">Tutup</button></div>
+    <label class="field">Pilih tahun<select id="publicFinanceYear">${years.map(y=>`<option value="${y}">${y}</option>`).join("")||'<option value="">Belum ada data</option>'}</select></label>
+    <div id="publicFinanceYearSummary"></div>
+    <div id="publicFinanceMonthRows"></div>
+    <div id="publicFinanceTransactions" class="public-finance-transactions" hidden></div>`;
   $("#closePublicDetail").onclick=()=>{panel.hidden=true;};
-  const draw=()=>{
-    const month=$("#publicFinanceMonth").value;
-    const bucket=months[month]||{income:[],expenses:[],totals:{}};
-    const list=kind==="income"?bucket.income:kind==="expenses"?bucket.expenses:[...bucket.income,...bucket.expenses].filter(x=>x.category===kind);
-    const rows=list.filter(x=>kind==="income"||kind==="expenses"||x.category===kind);
-    const total=rows.reduce((s,x)=>s+(Number(x.amount)||0),0);
-    $("#publicFinanceRows").innerHTML=`<div class="grid stats">${card("Jumlah transaksi",rows.length,"Bulan "+(month||"-"))}${card("Total",money(total),kind==="expenses"?"Pengeluaran":"Pemasukan")}</div>
-      <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>
-      ${rows.map(x=>`<tr><td>${formatPublicDate(x.date)}</td><td>${escapeHtml(x.category||"-")}</td><td>${escapeHtml(x.description||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Belum ada transaksi pada bulan ini.</td></tr>'}
-      </tbody></table></div>`;
+  const getRows=(period)=>{
+    const bucket=months[period]||{income:[],expenses:[],totals:{}};
+    const income=kind==="expenses"?[]:(bucket.income||[]).filter(x=>!categoryLabels[kind]||x.category===kind);
+    const expenses=kind==="income"?[]:(bucket.expenses||[]).filter(x=>!categoryLabels[kind]||x.category===kind);
+    return {income,expenses};
   };
-  $("#publicFinanceMonth").addEventListener("change",draw);
-  draw();
+  const sum=rows=>rows.reduce((n,x)=>n+(Number(x.amount)||0),0);
+  const draw=()=>{
+    const year=$("#publicFinanceYear").value;
+    const periods=monthKeys.filter(p=>p.startsWith(year+"-")).sort();
+    let yearIncome=0,yearExpenses=0;
+    const monthly=periods.map(period=>{
+      const rows=getRows(period),income=sum(rows.income),expenses=sum(rows.expenses);
+      yearIncome+=income;yearExpenses+=expenses;
+      return {period,income,expenses,rows};
+    });
+    $("#publicFinanceYearSummary").innerHTML=`<div class="grid stats public-year-stats">${card("Total pemasukan",money(yearIncome),"Tahun "+(year||"-"))}${card("Total pengeluaran",money(yearExpenses),"Tahun "+(year||"-"))}${card("Selisih",money(yearIncome-yearExpenses),"Pemasukan dikurangi pengeluaran")}</div>`;
+    $("#publicFinanceMonthRows").innerHTML=`<div class="section-head"><h4>Rincian per bulan · ${year||"-"}</h4></div><div class="table-wrap"><table><thead><tr><th>Bulan</th><th>Pemasukan</th><th>Pengeluaran</th><th>Selisih</th><th>Rincian</th></tr></thead><tbody>${monthly.map(x=>`<tr><td>${formatPublicMonth(x.period)}</td><td class="amount">${money(x.income)}</td><td class="amount">${money(x.expenses)}</td><td class="amount">${money(x.income-x.expenses)}</td><td><button type="button" class="btn outline btn-sm" data-public-month="${x.period}">Lihat</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada transaksi pada tahun ini.</td></tr>'}</tbody><tfoot><tr><th>Total tahun</th><th class="amount">${money(yearIncome)}</th><th class="amount">${money(yearExpenses)}</th><th class="amount">${money(yearIncome-yearExpenses)}</th><th></th></tr></tfoot></table></div>`;
+    $("#publicFinanceTransactions").hidden=true;
+    $("#publicFinanceTransactions").innerHTML="";
+    $("#publicFinanceMonthRows").querySelectorAll("[data-public-month]").forEach(button=>{
+      button.addEventListener("click",()=>{
+        const period=button.dataset.publicMonth,rows=getRows(period),items=[...rows.income.map(x=>({...x,flow:"Pemasukan"})),...rows.expenses.map(x=>({...x,flow:"Pengeluaran"}))].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+        const box=$("#publicFinanceTransactions");box.hidden=false;
+        box.innerHTML=`<div class="section-head"><h4>Transaksi ${formatPublicMonth(period)}</h4><span class="pill">${items.length} transaksi</span></div><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>${items.map(x=>`<tr><td>${formatPublicDate(x.date)}</td><td>${x.flow}</td><td>${escapeHtml(x.description||categoryLabels[x.category]||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Tidak ada transaksi.</td></tr>'}</tbody></table></div>`;
+        box.scrollIntoView({behavior:"smooth",block:"nearest"});
+      });
+    });
+  };
+  $("#publicFinanceYear").addEventListener("change",draw);
+  if(years.length)draw();
+  else{
+    $("#publicFinanceYearSummary").innerHTML='<div class="muted-note">Belum ada data pemasukan atau pengeluaran yang dipublikasikan.</div>';
+    $("#publicFinanceMonthRows").innerHTML="";
+  }
+}
+function formatPublicMonth(value){
+  if(!/^\d{4}-\d{2}$/.test(String(value||"")))return String(value||"-");
+  const [year,month]=value.split("-").map(Number);
+  return new Date(year,month-1,1).toLocaleDateString("id-ID",{month:"long",year:"numeric"});
 }
 
 function formatPublicDate(value){
@@ -284,18 +315,34 @@ async function renderPublicBills(c, authenticated){
     acc.kas+=Number(x.kas)||0; acc.sampah+=Number(x.sampah)||0; acc.air+=Number(x.air)||0; acc.total+=Number(x.total)||0;
     return acc;
   },{kas:0,sampah:0,air:0,total:0});
-  c.innerHTML=`<div class="section-head"><h3>Daftar Tunggakan</h3><span class="pill">Akumulasi sampai ${monthKey()}</span></div>
+  const categoryLine=(label,detail)=>{
+    const amount=Number(detail?.amount)||0;
+    if(amount<=0)return "";
+    const count=Number(detail?.periodCount)||0;
+    const periods=Array.isArray(detail?.periods)?detail.periods:[];
+    const suffix=periods.length?periods.map(escapeHtml).join(", "):(count+" bulan");
+    const usage=label==="Air"&&Number(detail?.usageM3)>0?`<span class="arrears-usage">${Number(detail.usageM3).toLocaleString("id-ID",{maximumFractionDigits:3})} m³</span>`:"";
+    return `<div class="arrears-category-row"><div><b>${label}</b><small>${suffix}${usage}</small></div><strong>${money(amount)}</strong></div>`;
+  };
+  c.innerHTML=`<div class="section-head"><div><h3>Daftar Tunggakan</h3><p class="tiny muted">Rincian kewajiban setiap rumah</p></div><span class="pill">Sampai ${monthKey()}</span></div>
   <div class="grid stats">
-    ${card("Total tunggakan",money(totals.total),"Tagihan berjalan + seluruh tunggakan sebelumnya")}
+    ${card("Total tunggakan",money(totals.total),"Akumulasi semua rumah")}
     ${card("Kas RT",money(totals.kas),"Sisa kewajiban")}
     ${card("Sampah",money(totals.sampah),"Sisa kewajiban")}
     ${card("Air",money(totals.air),"Sisa kewajiban")}
   </div>
-  <div class="muted-note">Setiap rumah ditampilkan satu kali. Nominal merupakan akumulasi tagihan bulan berjalan dan seluruh bulan sebelumnya yang belum lunas, setelah dikurangi pembayaran yang sudah tercatat. Tidak menampilkan nama kepala keluarga, nomor telepon, atau anggota keluarga.</div>
-  <div id="publicBillTable" class="table-wrap"></div>`;
-  $("#publicBillTable").innerHTML=`<table><thead><tr><th>Blok / Rumah</th><th>Kas RT</th><th>Sampah</th><th>Air</th><th>Bulan tertunggak</th><th>Total harus dibayar</th></tr></thead><tbody>
-    ${list.map(x=>`<tr><td>${escapeHtml(x.label||"Rumah")}</td><td>${money(x.kas||0)}</td><td>${money(x.sampah||0)}</td><td>${money(x.air||0)}</td><td>${Number(x.periodCount)||0}</td><td class="amount">${money(x.total||0)}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">Tidak ada tunggakan sampai bulan berjalan.</td></tr>'}
-    </tbody></table>`;
+  <div class="muted-note">Rincian menunjukkan sisa tagihan yang belum lunas setelah dikurangi pembayaran. Air menampilkan pemakaian meter (m³) jika data meter periode tersebut tersedia. Nama kepala keluarga dan nomor telepon tidak ditampilkan.</div>
+  <div id="publicBillCards" class="arrears-card-list">
+    ${list.map(x=>{
+      const details=x.details||{};
+      const lines=categoryLine("Kas RT",details.kas)+categoryLine("Sampah",details.sampah)+categoryLine("Air",details.air);
+      return `<article class="panel arrears-house-card">
+        <div class="arrears-house-head"><div><span class="eyebrow">BLOK / RUMAH</span><h4>${escapeHtml(x.label||"Rumah")}</h4></div><span class="pill">${Number(x.periodCount)||0} bulan tertunggak</span></div>
+        <div class="arrears-category-list">${lines||'<p class="muted tiny">Tidak ada rincian kategori.</p>'}</div>
+        <div class="arrears-total"><span>Total tunggakan</span><strong>${money(x.total||0)}</strong></div>
+      </article>`;
+    }).join("")||'<div class="panel empty">Tidak ada tunggakan sampai bulan berjalan.</div>'}
+  </div>`;
 }
 
 function escapeHtml(value){
@@ -699,7 +746,7 @@ async function renderCategory(c,cat){
     read("arrearsLedger")
   ]);
   const balance={...(bal||{}),deposit:position[cat].depositLiability,cashBalance:position[cat].cashBalance,availableBalance:position[cat].availableBalance,advance:position[cat].advanceLiability},period=monthKey(),year=Number(period.slice(0,4));
-  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings.goLivePeriod||"")?settings.goLivePeriod:`${year}-01`;
+  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(settings.goLivePeriod||"")?settings.goLivePeriod:`${year}-01`;
   const yearStart=`${year}-01`;
   const firstPeriod=goLive>yearStart?goLive:yearStart;
   const firstMonth=Number(firstPeriod.slice(5,7));
@@ -707,7 +754,7 @@ async function renderCategory(c,cat){
   const monthDue={};
   for(const ledger of Object.values(arrearsLedger||{})){
     for(const [key,row] of Object.entries(ledger||{})){
-      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
+      if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
       const amount=Math.max(0,Number(row?.[cat])||0);
       if(amount>0)monthDue[key]=(monthDue[key]||0)+amount;
     }
@@ -826,7 +873,7 @@ async function runMasterDelete(mode){
 async function renderTransactions(c){
   const current=monthKey(),currentYear=Number(current.slice(0,4));
   const [monthly,balances,settings]=await Promise.all([read("financeSummaryByMonth"),read("category_balances"),getBillingSettings()]);
-  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings?.goLivePeriod||"")?settings.goLivePeriod:`${currentYear}-01`;
+  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(settings?.goLivePeriod||"")?settings.goLivePeriod:`${currentYear}-01`;
   const years=[...new Set([currentYear,...Object.keys(monthly||{}).filter(validPeriod).map(p=>Number(p.slice(0,4)))])].filter(y=>y>=Number(goLive.slice(0,4))&&y<=currentYear).sort((a,b)=>b-a);
   const categories=["kas","air","sampah"],labels={kas:"Kas RT",air:"Air",sampah:"Sampah",lainnya:"Lainnya"};
   const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];

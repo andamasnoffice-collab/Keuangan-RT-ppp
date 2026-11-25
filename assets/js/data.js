@@ -92,7 +92,7 @@ export async function applyMonthlySummaryDelta(period, entryId, delta) {
   if(!result.committed) throw new Error("Ringkasan bulanan tidak berhasil diperbarui.");
   return result.snapshot.val();
 }
-export async function setHouseholdArrearPeriod(householdId, period, category, amount) {
+export async function setHouseholdArrearPeriod(householdId, period, category, amount, details={}) {
   if(!validPeriod(period)||!["kas","air","sampah"].includes(category)) throw new Error("Periode atau kategori tunggakan tidak valid.");
   const value=Math.max(0,Number(amount)||0);
   const ledgerRef=root(`arrearsLedger/${householdId}`);
@@ -100,6 +100,7 @@ export async function setHouseholdArrearPeriod(householdId, period, category, am
     const ledger=current||{};
     ledger[period]=ledger[period]||{};
     ledger[period][category]=value;
+    if(category==="air"&&Number.isFinite(Number(details.airUsageM3)))ledger[period].airUsageM3=Math.max(0,Number(details.airUsageM3));
     ledger[period].updatedAt=Date.now();
     return ledger;
   },{applyLocally:false});
@@ -206,7 +207,7 @@ async function applyDepositToWaterBill(period,householdId,recordedBy){
     [`transactionsByMonth/${period}/${txRef.key}`]:{id:txRef.key,type:"payment",category:"air",amount:use,householdId,referenceId:paymentRef.key,date:period+"-01",description:"Pelunasan otomatis dari deposit air",recordedBy:recordedBy||null,createdAt:now},
   };
   await writeAndVerify(updates,[`paymentsByMonth/${period}/${paymentRef.key}`,`bills/${period}/${householdId}/air`,`deposits/${householdId}/air`]);
-  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining,{airUsageM3:usage}));
   await retryIdempotent(()=>applyMonthlySummaryDelta(period,"deposit_auto_"+paymentRef.key,{type:"income",category:"air",amount:use,date:period+"-01",description:"Pelunasan tagihan Air dari deposit"}));
   return use;
 }
@@ -451,7 +452,7 @@ export async function importWaterStatement({period,rows,recordedBy}) {
     for(const row of rows){
       const blockKey=norm(row.block);
       const house=byBlock.get(blockKey);
-      if(house&&row.amount!==null&&row.amount!==undefined){await retryIdempotent(()=>setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0));await retryIdempotent(()=>applyDepositToWaterBill(period,house.id,recordedBy));}
+      if(house&&row.amount!==null&&row.amount!==undefined){await retryIdempotent(()=>setHouseholdArrearPeriod(house.id,period,"air",Number(row.amount)||0,{airUsageM3:Number(row.usage)||0}));await retryIdempotent(()=>applyDepositToWaterBill(period,house.id,recordedBy));}
     }
     await update(lockRef,{status:"completed",completedAt:Date.now()});
     await refreshPublicSnapshotSafely();
@@ -491,7 +492,7 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(bill?.amount)||0),createdAt:timestamp});
   if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
-  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining,{airUsageM3:usage}));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
   await refreshPublicSnapshotSafely();
   return reading;
@@ -528,7 +529,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(bill.amount)||0),createdAt:timestamp});
   if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
-  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining,{airUsageM3:usage}));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
   await refreshPublicSnapshotSafely();
   return reading;
@@ -682,6 +683,7 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
     const hasLedger=validPeriods.length>0;
     const value=arrearsSummary?.[id]||{};
     const totals={kas:0,air:0,sampah:0,periodCount:0};
+    const details={kas:{amount:0,periodCount:0,periods:[]},air:{amount:0,periodCount:0,periods:[],usageM3:0},sampah:{amount:0,periodCount:0,periods:[]}};
     if(hasLedger){
       for(const period of validPeriods){
         const row=ledger[period]||{};
@@ -689,19 +691,28 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
         for(const cat of ["kas","air","sampah"]){
           const amount=Math.max(0,Number(row?.[cat])||0);
           totals[cat]+=amount;
-          if(amount>0)hasDue=true;
+          if(amount>0){
+            hasDue=true;
+            details[cat].amount+=amount;
+            details[cat].periodCount++;
+            details[cat].periods.push(period);
+            if(cat==="air")details.air.usageM3+=Math.max(0,Number(row?.airUsageM3)||0);
+          }
         }
         if(hasDue)totals.periodCount++;
       }
     }else{
-      // Compatibility fallback for households that still have summary data but no monthly ledger.
-      for(const cat of ["kas","air","sampah"]) totals[cat]=Math.max(0,Number(value?.[cat])||0);
+      // Compatibility fallback for older summary-only records without monthly detail.
+      for(const cat of ["kas","air","sampah"]){
+        totals[cat]=Math.max(0,Number(value?.[cat])||0);
+        if(totals[cat]>0){details[cat].amount=totals[cat];details[cat].periodCount=Math.max(0,Number(value?.periodCount)||0);}
+      }
       totals.periodCount=Math.max(0,Number(value?.periodCount)||0);
     }
     const total=totals.kas+totals.air+totals.sampah;
     if(!total)continue;
     const house=households?.[id]||{};
-    allOutstanding[id]={label:String(house.block||"Rumah terdaftar").slice(0,60),kas:totals.kas,air:totals.air,sampah:totals.sampah,total,periodCount:totals.periodCount};
+    allOutstanding[id]={label:String(house.block||"Rumah terdaftar").slice(0,60),kas:totals.kas,air:totals.air,sampah:totals.sampah,total,periodCount:totals.periodCount,details};
     totalOutstanding+=total;
   }
   const categoryTotals={};
