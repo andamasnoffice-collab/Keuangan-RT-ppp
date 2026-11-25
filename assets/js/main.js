@@ -249,26 +249,57 @@ async function renderPublicDashboard(c){
 function showPublicFinanceDetail(kind, dashboard){
   const panel=$("#publicFinanceDetail");
   const months=dashboard.financeByMonth||{};
-  const monthKeys=Object.keys(months).sort().reverse();
-  const titleText=kind==="income"?"Rincian pemasukan":kind==="expenses"?"Rincian pengeluaran":`Arus kas kategori ${kind.toUpperCase()}`;
+  const monthKeys=Object.keys(months).filter(x=>/^\\d{4}-\\d{2}$/.test(x)).sort().reverse();
+  const years=[...new Set(monthKeys.map(x=>x.slice(0,4)))].sort().reverse();
+  const categoryLabels={kas:"Kas RT",air:"Air",sampah:"Sampah"};
+  const titleText=kind==="income"?"Rincian seluruh pemasukan":kind==="expenses"?"Rincian seluruh pengeluaran":`Rincian keuangan ${categoryLabels[kind]||kind.toUpperCase()}`;
   panel.hidden=false;
-  panel.innerHTML=`<div class="section-head"><h3>${titleText}</h3><button type="button" class="btn outline" id="closePublicDetail">Tutup</button></div>
-    <label class="field">Pilih bulan<select id="publicFinanceMonth">${monthKeys.map(m=>`<option value="${m}">${m}</option>`).join("")||'<option value="">Belum ada data</option>'}</select></label>
-    <div id="publicFinanceRows"></div>`;
+  panel.innerHTML=`<div class="section-head"><div><h3>${titleText}</h3><p class="tiny muted">Pilih tahun untuk melihat rekap dan rincian per bulan.</p></div><button type="button" class="btn outline" id="closePublicDetail">Tutup</button></div>
+    <label class="field">Pilih tahun<select id="publicFinanceYear">${years.map(y=>`<option value="${y}">${y}</option>`).join("")||'<option value="">Belum ada data</option>'}</select></label>
+    <div id="publicFinanceYearSummary"></div>
+    <div id="publicFinanceMonthRows"></div>
+    <div id="publicFinanceTransactions" class="public-finance-transactions" hidden></div>`;
   $("#closePublicDetail").onclick=()=>{panel.hidden=true;};
-  const draw=()=>{
-    const month=$("#publicFinanceMonth").value;
-    const bucket=months[month]||{income:[],expenses:[],totals:{}};
-    const list=kind==="income"?bucket.income:kind==="expenses"?bucket.expenses:[...bucket.income,...bucket.expenses].filter(x=>x.category===kind);
-    const rows=list.filter(x=>kind==="income"||kind==="expenses"||x.category===kind);
-    const total=rows.reduce((s,x)=>s+(Number(x.amount)||0),0);
-    $("#publicFinanceRows").innerHTML=`<div class="grid stats">${card("Jumlah transaksi",rows.length,"Bulan "+(month||"-"))}${card("Total",money(total),kind==="expenses"?"Pengeluaran":"Pemasukan")}</div>
-      <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>
-      ${rows.map(x=>`<tr><td>${formatPublicDate(x.date)}</td><td>${escapeHtml(x.category||"-")}</td><td>${escapeHtml(x.description||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Belum ada transaksi pada bulan ini.</td></tr>'}
-      </tbody></table></div>`;
+  const getRows=(period)=>{
+    const bucket=months[period]||{income:[],expenses:[],totals:{}};
+    const income=(bucket.income||[]).filter(x=>kind==="income"||!categoryLabels[kind]||x.category===kind);
+    const expenses=(bucket.expenses||[]).filter(x=>kind==="expenses"||!categoryLabels[kind]||x.category===kind);
+    return {income,expenses};
   };
-  $("#publicFinanceMonth").addEventListener("change",draw);
-  draw();
+  const sum=rows=>rows.reduce((n,x)=>n+(Number(x.amount)||0),0);
+  const draw=()=>{
+    const year=$("#publicFinanceYear").value;
+    const periods=monthKeys.filter(p=>p.startsWith(year+"-")).sort();
+    let yearIncome=0,yearExpenses=0;
+    const monthly=periods.map(period=>{
+      const rows=getRows(period),income=sum(rows.income),expenses=sum(rows.expenses);
+      yearIncome+=income;yearExpenses+=expenses;
+      return {period,income,expenses,rows};
+    });
+    $("#publicFinanceYearSummary").innerHTML=`<div class="grid stats public-year-stats">${card("Total pemasukan",money(yearIncome),"Tahun "+(year||"-"))}${card("Total pengeluaran",money(yearExpenses),"Tahun "+(year||"-"))}${card("Selisih",money(yearIncome-yearExpenses),"Pemasukan dikurangi pengeluaran")}</div>`;
+    $("#publicFinanceMonthRows").innerHTML=`<div class="section-head"><h4>Rincian per bulan · ${year||"-"}</h4></div><div class="table-wrap"><table><thead><tr><th>Bulan</th><th>Pemasukan</th><th>Pengeluaran</th><th>Selisih</th><th>Rincian</th></tr></thead><tbody>${monthly.map(x=>`<tr><td>${formatPublicMonth(x.period)}</td><td class="amount">${money(x.income)}</td><td class="amount">${money(x.expenses)}</td><td class="amount">${money(x.income-x.expenses)}</td><td><button type="button" class="btn outline btn-sm" data-public-month="${x.period}">Lihat</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada transaksi pada tahun ini.</td></tr>'}</tbody><tfoot><tr><th>Total tahun</th><th class="amount">${money(yearIncome)}</th><th class="amount">${money(yearExpenses)}</th><th class="amount">${money(yearIncome-yearExpenses)}</th><th></th></tr></tfoot></table></div>`;
+    $("#publicFinanceTransactions").hidden=true;
+    $("#publicFinanceTransactions").innerHTML="";
+    $("#publicFinanceMonthRows").querySelectorAll("[data-public-month]").forEach(button=>{
+      button.addEventListener("click",()=>{
+        const period=button.dataset.publicMonth,rows=getRows(period),items=[...rows.income.map(x=>({...x,flow:"Pemasukan"})),...rows.expenses.map(x=>({...x,flow:"Pengeluaran"}))].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+        const box=$("#publicFinanceTransactions");box.hidden=false;
+        box.innerHTML=`<div class="section-head"><h4>Transaksi ${formatPublicMonth(period)}</h4><span class="pill">${items.length} transaksi</span></div><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>${items.map(x=>`<tr><td>${formatPublicDate(x.date)}</td><td>${x.flow}</td><td>${escapeHtml(x.description||categoryLabels[x.category]||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Tidak ada transaksi.</td></tr>'}</tbody></table></div>`;
+        box.scrollIntoView({behavior:"smooth",block:"nearest"});
+      });
+    });
+  };
+  $("#publicFinanceYear").addEventListener("change",draw);
+  if(years.length)draw();
+  else{
+    $("#publicFinanceYearSummary").innerHTML='<div class="muted-note">Belum ada data pemasukan atau pengeluaran yang dipublikasikan.</div>';
+    $("#publicFinanceMonthRows").innerHTML="";
+  }
+}
+function formatPublicMonth(value){
+  if(!/^\\d{4}-\\d{2}$/.test(String(value||"")))return String(value||"-");
+  const [year,month]=value.split("-").map(Number);
+  return new Date(year,month-1,1).toLocaleDateString("id-ID",{month:"long",year:"numeric"});
 }
 
 function formatPublicDate(value){
