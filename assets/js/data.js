@@ -323,10 +323,10 @@ export async function createMonthlyBills(period, recordedBy) {
       const applied={};
       for(const cat of ["air"]){
         const available=Math.max(0,Number(deposits?.[id]?.[cat])||0);
-        const used=Math.min(available,raw[cat]);
+        const used=Math.min(available,Math.max(0,Number(row[cat].remaining)||0));
         if(used>0){
           applied[cat]=used;depositSummary[cat]+=used;
-          row[cat].paidAmount=used;row[cat].remaining=raw[cat]-used;row[cat].depositAppliedAmount=used;
+          row[cat].paidAmount=Number(row[cat].paidAmount||0)+used;row[cat].remaining=Math.max(0,Number(row[cat].remaining||0)-used);row[cat].depositAppliedAmount=Number(row[cat].depositAppliedAmount||0)+used;
           row[cat].status=row[cat].remaining===0?"paid":"partial";
           updates[`deposits/${id}/${cat}`]=available-used;
           const ledgerRef=push(root("deposit_ledger"));
