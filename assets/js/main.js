@@ -249,7 +249,7 @@ async function renderPublicDashboard(c){
 function showPublicFinanceDetail(kind, dashboard){
   const panel=$("#publicFinanceDetail");
   const months=dashboard.financeByMonth||{};
-  const monthKeys=Object.keys(months).filter(x=>/^\\d{4}-\\d{2}$/.test(x)).sort().reverse();
+  const monthKeys=Object.keys(months).filter(x=>/^\d{4}-\d{2}$/.test(x)).sort().reverse();
   const years=[...new Set(monthKeys.map(x=>x.slice(0,4)))].sort().reverse();
   const categoryLabels={kas:"Kas RT",air:"Air",sampah:"Sampah"};
   const titleText=kind==="income"?"Rincian seluruh pemasukan":kind==="expenses"?"Rincian seluruh pengeluaran":`Rincian keuangan ${categoryLabels[kind]||kind.toUpperCase()}`;
@@ -262,8 +262,8 @@ function showPublicFinanceDetail(kind, dashboard){
   $("#closePublicDetail").onclick=()=>{panel.hidden=true;};
   const getRows=(period)=>{
     const bucket=months[period]||{income:[],expenses:[],totals:{}};
-    const income=(bucket.income||[]).filter(x=>kind==="income"||!categoryLabels[kind]||x.category===kind);
-    const expenses=(bucket.expenses||[]).filter(x=>kind==="expenses"||!categoryLabels[kind]||x.category===kind);
+    const income=kind==="expenses"?[]:(bucket.income||[]).filter(x=>!categoryLabels[kind]||x.category===kind);
+    const expenses=kind==="income"?[]:(bucket.expenses||[]).filter(x=>!categoryLabels[kind]||x.category===kind);
     return {income,expenses};
   };
   const sum=rows=>rows.reduce((n,x)=>n+(Number(x.amount)||0),0);
@@ -297,7 +297,7 @@ function showPublicFinanceDetail(kind, dashboard){
   }
 }
 function formatPublicMonth(value){
-  if(!/^\\d{4}-\\d{2}$/.test(String(value||"")))return String(value||"-");
+  if(!/^\d{4}-\d{2}$/.test(String(value||"")))return String(value||"-");
   const [year,month]=value.split("-").map(Number);
   return new Date(year,month-1,1).toLocaleDateString("id-ID",{month:"long",year:"numeric"});
 }
@@ -746,7 +746,7 @@ async function renderCategory(c,cat){
     read("arrearsLedger")
   ]);
   const balance={...(bal||{}),deposit:position[cat].depositLiability,cashBalance:position[cat].cashBalance,availableBalance:position[cat].availableBalance,advance:position[cat].advanceLiability},period=monthKey(),year=Number(period.slice(0,4));
-  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings.goLivePeriod||"")?settings.goLivePeriod:`${year}-01`;
+  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(settings.goLivePeriod||"")?settings.goLivePeriod:`${year}-01`;
   const yearStart=`${year}-01`;
   const firstPeriod=goLive>yearStart?goLive:yearStart;
   const firstMonth=Number(firstPeriod.slice(5,7));
@@ -754,7 +754,7 @@ async function renderCategory(c,cat){
   const monthDue={};
   for(const ledger of Object.values(arrearsLedger||{})){
     for(const [key,row] of Object.entries(ledger||{})){
-      if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
+      if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>period)continue;
       const amount=Math.max(0,Number(row?.[cat])||0);
       if(amount>0)monthDue[key]=(monthDue[key]||0)+amount;
     }
@@ -873,7 +873,7 @@ async function runMasterDelete(mode){
 async function renderTransactions(c){
   const current=monthKey(),currentYear=Number(current.slice(0,4));
   const [monthly,balances,settings]=await Promise.all([read("financeSummaryByMonth"),read("category_balances"),getBillingSettings()]);
-  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings?.goLivePeriod||"")?settings.goLivePeriod:`${currentYear}-01`;
+  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(settings?.goLivePeriod||"")?settings.goLivePeriod:`${currentYear}-01`;
   const years=[...new Set([currentYear,...Object.keys(monthly||{}).filter(validPeriod).map(p=>Number(p.slice(0,4)))])].filter(y=>y>=Number(goLive.slice(0,4))&&y<=currentYear).sort((a,b)=>b-a);
   const categories=["kas","air","sampah"],labels={kas:"Kas RT",air:"Air",sampah:"Sampah",lainnya:"Lainnya"};
   const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
