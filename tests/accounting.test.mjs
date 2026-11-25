@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance,paymentRecognizedCash,buildWaiverJournal} from "../assets/js/accounting.js";
+import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance,paymentRecognizedCash,buildWaiverJournal,calculateAvailableBalance,buildAdvanceApplicationJournal} from "../assets/js/accounting.js";
 const period="2026-11",date="2026-11-20";
 test("invoice accrual records receivable and revenue, not cash",()=>{
  const j=buildInvoiceJournal({id:"inv1",period,date,householdId:"h1",category:"kas",amount:100000});
@@ -68,4 +68,14 @@ test("opening cash and deposit journal balances without counting as period cash 
  assert.equal(opening.lines.find(x=>x.account==="liability.deposit.air").credit,250000);
  const flow=cashFlow({opening});
  assert.equal(flow.inflow,0);assert.equal(flow.outflow,0);assert.equal(flow.net,0);
+});
+
+test("spendable cash deducts deposit and unearned advance liabilities",()=>{
+ assert.equal(calculateAvailableBalance({cashBalance:1000000,depositLiability:150000,advanceLiability:200000}),650000);
+ assert.equal(calculateAvailableBalance({cashBalance:100000,depositLiability:150000,advanceLiability:0}),-50000);
+});
+test("deposit is restricted to water and advance is restricted to fixed dues",()=>{
+ assert.throws(()=>buildPaymentJournal({id:"bad-deposit",period,date,householdId:"h1",items:[{cat:"kas",cash:0,depositUsed:1000,applied:1000,surplus:0}]}),/Deposit hanya diperbolehkan/);
+ assert.throws(()=>buildPaymentJournal({id:"bad-air-advance",period,date,householdId:"h1",items:[{cat:"air",cash:1000,applied:1000,advance:true}]}),/Pembayaran di muka hanya berlaku/);
+ assert.throws(()=>buildAdvanceApplicationJournal({id:"bad-advance",period,date,householdId:"h1",category:"air",amount:1000}),/Uang muka hanya berlaku/);
 });
