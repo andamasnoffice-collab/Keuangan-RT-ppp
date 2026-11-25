@@ -613,7 +613,7 @@ async function calculateFinancialPosition({balances=null,deposits=null,advances=
         const amount=Math.max(0,Number(advance.amount)||0);
         if(!amount)continue;
         const bill=billRowsByPeriod[period]?.[householdId]?.[category];
-        const applied=!!bill&&(bill.advancePaymentId===advance.paymentId||(!!bill.advancePaidAt&&Number(bill.paidAmount)>=amount));
+        const applied=!!bill&&((!!advance.paymentId&&bill.advancePaymentId===advance.paymentId)||(!!bill.advancePaidAt&&Number(bill.paidAmount)>=amount));
         if(!applied)advanceLiability+=amount;
       }
     }
