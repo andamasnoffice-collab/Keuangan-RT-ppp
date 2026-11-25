@@ -848,10 +848,28 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   }
 
   // Reverse deposit movements belonging to the deleted month, then keep all other periods intact.
-  const [depositLedger,deposits,monthly,balances,settings,annual]=await Promise.all([
+  const [depositLedger,deposits,monthly,balances,settings,annual,journals,advanceRows]=await Promise.all([
     read("deposit_ledger"),read("deposits"),read("financeSummaryByMonth"),
-    read("category_balances"),getBillingSettings(),read("annual_summaries")
+    read("category_balances"),getBillingSettings(),read("annual_summaries"),
+    read("journal_entries"),read("fixed_advance_payments")
   ]);
+  // Do not delete a prepayment record after it has already settled a later bill.
+  for(const [householdId,periods] of Object.entries(advanceRows||{})){
+    for(const [targetPeriod,categories] of Object.entries(periods||{})){
+      for(const category of ["kas","sampah"]){
+        const advance=categories?.[category];
+        if(!advance||periodOf(advance)!==p)continue;
+        const targetBill=await read(`bills/${targetPeriod}/${householdId}/${category}`);
+        if(targetBill?.advancePaymentId&&targetBill.advancePaymentId===advance.paymentId){
+          throw new Error(`Periode ${p} memiliki pembayaran di muka yang sudah diterapkan ke tagihan ${targetPeriod} (${category}). Periksa dan batalkan penerapan tagihan tujuan terlebih dahulu.`);
+        }
+        updates[`fixed_advance_payments/${householdId}/${targetPeriod}/${category}`]=null;
+      }
+    }
+  }
+  for(const [journalId,entry] of Object.entries(journals||{})){
+    if(entry?.period===p)updates[`journal_entries/${journalId}`]=null;
+  }
   const removedDeposits={};
   for(const [id,row] of Object.entries(depositLedger||{})){
     if(periodOf(row)!==p)continue;
@@ -868,15 +886,24 @@ export async function deleteMasterData({mode,period,recordedBy}) {
   }
 
   const remainingMonthly={...(monthly||{})};delete remainingMonthly[p];
+  const goLive=validPeriod(settings?.goLivePeriod)?settings.goLivePeriod:"0000-00";
+  const remainingJournals=Object.entries(journals||{}).filter(([,entry])=>entry?.period!==p);
   for(const category of ["kas","air","sampah"]){
     const opening=Number(balances?.[category]?.openingBalance??settings?.openingBalances?.[category])||0;
-    let income=0,expense=0;
-    for(const summary of Object.values(remainingMonthly)){
+    let income=0,expense=0,cashMovement=0;
+    for(const [month,summary] of Object.entries(remainingMonthly)){
+      if(month<goLive)continue;
       income+=Number(summary?.byCategory?.[category]?.income)||0;
       expense+=Number(summary?.byCategory?.[category]?.expenses)||0;
     }
+    for(const [,entry] of remainingJournals){
+      if(entry?.sourceType==="opening_balance"||!validPeriod(entry?.period)||entry.period<goLive)continue;
+      for(const line of entry.lines||[]){
+        if(line.account===`asset.cash.${category}`)cashMovement+=(Number(line.debit)||0)-(Number(line.credit)||0);
+      }
+    }
     updates[`category_balances/${category}`]={
-      ...(balances?.[category]||{}),openingBalance:opening,balance:opening+income-expense,
+      ...(balances?.[category]||{}),openingBalance:opening,balance:opening+cashMovement,
       income,expense,updatedAt:stamp
     };
   }
