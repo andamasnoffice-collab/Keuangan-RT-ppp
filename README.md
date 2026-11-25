@@ -24,6 +24,15 @@
 6. Deposit warga dipisahkan dari saldo operasional. Penggunaan deposit untuk tagihan kategori yang sama dicatat pada ledger deposit.
 7. Laporan tahunan merupakan snapshot; buat ulang setelah ada koreksi transaksi pada tahun terkait.
 
+## Prinsip saldo dan kewajiban
+- `category_balances/{kategori}.balance` menyimpan uang kas/bank fisik yang tercatat. Saldo pembuka yang dimasukkan pengurus harus mencakup uang nyata yang masih tersimpan, termasuk dana deposit dan uang muka yang belum digunakan.
+- Dana bebas dihitung sebagai: **uang kas/bank − deposit warga − pembayaran di muka yang belum diterapkan**. Hanya dana bebas yang boleh dipakai untuk pengeluaran.
+- Deposit hanya berlaku untuk Air. Pembayaran di muka hanya berlaku untuk Kas RT dan Sampah.
+- Kelebihan pembayaran Air menambah kas/bank sekaligus kewajiban deposit; kelebihan tersebut tidak menambah dana bebas sampai dipakai membayar tagihan.
+- Saat deposit Air atau uang muka diterapkan ke tagihan, kewajiban berkurang dan dana bebas bertambah tanpa menambah kas/bank lagi. Perubahan ini masuk ringkasan pada periode penerapan.
+- Rekap tahunan membedakan dana bebas akhir periode dari posisi deposit dan uang muka saat rekap dibuat. Rekap lama perlu dibuat ulang setelah pembaruan rumus.
+- Penghapusan periode menghapus jurnal periode tersebut dan menghitung ulang kas/bank fisik dari jurnal yang tersisa. Penghapusan diblokir jika periode pembayaran berisi uang muka yang sudah diterapkan ke tagihan periode lain.
+
 ## Node Firebase utama
 - Privat: `households`, `bills`, `arrearsLedger`, `arrearsSummary`, `fixed_advance_payments`, `paymentsByMonth`, `expensesByMonth`, `transactionsByMonth`, `deposits`, `deposit_ledger`, `water_readings`, `category_balances`, `financeSummaryByMonth`, `annual_summaries`, `billing_runs`, `water_import_runs`, `settings`, `audit_logs`, `whatsapp_notifications`.
 - Publik: `public_views`.
