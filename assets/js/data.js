@@ -776,7 +776,7 @@ export async function buildAnnualSummary(year, recordedBy=null) {
   const arrearsTotals={kas:0,sampah:0,air:0,total:0};
   for(const row of Object.values(arrears||{}))for(const cat of categories)arrearsTotals[cat]+=Math.max(0,Number(row?.[cat])||0);
   arrearsTotals.total=categories.reduce((sum,cat)=>sum+arrearsTotals[cat],0);
-  const payload={year:y,periodStart,periodEnd,byCategory,arrearsAtSnapshot:arrearsTotals,cashBalanceAtSnapshot:position.totals.cashBalance,operatingBalanceAtSnapshot:position.totals.availableBalance,depositLiabilityAtSnapshot:position.totals.depositLiability,advanceLiabilityAtSnapshot:position.totals.advanceLiability,generatedAt:Date.now(),generatedBy:recordedBy||null,version:2};
+  const payload={year:y,periodStart,periodEnd,byCategory,arrearsAtSnapshot:arrearsTotals,cashBalanceAtSnapshot:position.totals.cashBalance,operatingBalanceAtSnapshot:position.totals.availableBalance,depositLiabilityAtSnapshot:position.totals.depositLiability,advanceLiabilityAtSnapshot:position.totals.advanceLiability,generatedAt:Date.now(),generatedBy:recordedBy||null,version:3};
   await writeAndVerify({[`annual_summaries/${y}`]:payload},[`annual_summaries/${y}`]);
   return payload;
 }
