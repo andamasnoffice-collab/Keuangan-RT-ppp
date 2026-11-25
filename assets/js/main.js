@@ -172,10 +172,10 @@ async function renderSettings(c){
         ${field("Tarif pemakaian air per m³","waterPerM3",settings.waterPerM3,"Dikalikan selisih meter akhir dan meter awal.")}
         <div class="full-row"><h4>Titik awal pembukuan digital</h4><p class="muted tiny">Bulan pertama aplikasi mulai menerbitkan tagihan, mencatat penerimaan, dan menyusun laporan.</p></div>
         <label class="field">Bulan mulai aplikasi<input name="goLivePeriod" type="month" value="${settings.goLivePeriod||monthKey()}" required><small class="muted tiny">Menjadi patokan awal pembukuan untuk semua rumah.</small></label>
-        <div class="full-row"><h4>Saldo awal operasional</h4><p class="muted tiny">Isi saldo uang nyata. Deposit dan piutang warga dicatat terpisah.</p></div>
-        ${field("Saldo awal Kas RT","openingKas",settings.openingBalances?.kas,"Saldo awal kas RT.")}
-        ${field("Saldo awal Kas Air","openingAir",settings.openingBalances?.air,"Saldo awal khusus pengelolaan air.")}
-        ${field("Saldo awal Sampah","openingSampah",settings.openingBalances?.sampah,"Saldo awal dana sampah.")}
+        <div class="full-row"><h4>Saldo kas/bank awal</h4><p class="muted tiny">Isi seluruh uang nyata yang tersimpan pada tanggal mulai, termasuk deposit Air dan uang muka Kas RT/Sampah. Sistem memisahkan kewajiban tersebut dari dana bebas.</p></div>
+        ${field("Saldo kas/bank awal Kas RT","openingKas",settings.openingBalances?.kas,"Termasuk kewajiban warga yang masih tersimpan.")}
+        ${field("Saldo kas/bank awal Air","openingAir",settings.openingBalances?.air,"Termasuk deposit Air yang masih tersimpan.")}
+        ${field("Saldo kas/bank awal Sampah","openingSampah",settings.openingBalances?.sampah,"Termasuk uang muka yang masih tersimpan.")}
       </div>
       <div class="summary-box" style="margin:8px 0 16px"><b>Rumus tagihan air</b><p class="tiny muted">Administrasi air + (pemakaian m³ × tarif per m³).</p><p class="tiny muted">Kas RT dan sampah menggunakan nominal tetap per rumah setiap bulan.</p></div>
       <button class="btn primary" type="submit">Simpan pengaturan tarif</button>
@@ -583,10 +583,15 @@ function houseDialog(existing=null){
 }
 
 async function renderDeposits(c){
-  const data=await read("deposits")||{};
-  const rows=[];
-  Object.entries(data).forEach(([hid,cats])=>Object.entries(cats||{}).forEach(([cat,amount])=>rows.push({hid,cat,amount})));
-  c.innerHTML=`<div class="grid stats">${card("Deposit kas",money(rows.filter(x=>x.cat==="kas").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Deposit sampah",money(rows.filter(x=>x.cat==="sampah").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Deposit air",money(rows.filter(x=>x.cat==="air").reduce((s,x)=>s+Number(x.amount||0),0)))}${card("Total deposit",money(rows.reduce((s,x)=>s+Number(x.amount||0),0)),"Tidak termasuk saldo operasional")}</div><div class="section-head"><h3>Saldo deposit per rumah</h3></div><div class="table-wrap"><table><thead><tr><th>Rumah</th><th>Kategori</th><th>Saldo deposit</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${households[x.hid]?.block||x.hid}</td><td>${x.cat}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">Belum ada deposit.</td></tr>'}</tbody></table></div><div class="muted-note" style="margin-top:14px">Deposit tidak dapat dipindahkan antar-kategori. Perubahan deposit harus tercatat di deposit ledger dan melalui proses transaksi yang tervalidasi.</div>`;
+  const data=await read("deposits")||{},rows=[];
+  Object.entries(data).forEach(([hid,cats])=>Object.entries(cats||{}).forEach(([cat,amount])=>{if(Number(amount)>0)rows.push({hid,cat,amount:Number(amount)});}));
+  const airTotal=rows.filter(x=>x.cat==="air").reduce((sum,x)=>sum+x.amount,0);
+  const legacy=rows.filter(x=>x.cat!=="air"),legacyTotal=legacy.reduce((sum,x)=>sum+x.amount,0);
+  c.innerHTML=`<div class="grid stats">${card("Total deposit Air",money(airTotal),"Kewajiban kepada warga")}${card("Catatan deposit lama",money(legacyTotal),"Kas RT/Sampah · perlu verifikasi")}</div>
+  <div class="section-head"><div><h3>Deposit Air per rumah</h3><p class="tiny muted">Deposit hanya dapat digunakan untuk membayar tagihan Air rumah yang sama.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Rumah</th><th>Saldo deposit Air</th></tr></thead><tbody>${rows.filter(x=>x.cat==="air").map(x=>`<tr><td>${escapeHtml(households[x.hid]?.block||x.hid)}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">Belum ada deposit Air.</td></tr>'}</tbody></table></div>
+  ${legacy.length?`<div class="muted-note" style="margin-top:14px"><b>Perlu pemeriksaan data lama.</b> Ditemukan deposit non-Air sebesar ${money(legacyTotal)}. Aturan baru tidak mengizinkan deposit Kas RT atau Sampah. Data lama tidak dihapus otomatis; periksa dan selesaikan melalui koreksi pembukuan.</div><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Rumah</th><th>Kategori lama</th><th>Nominal</th></tr></thead><tbody>${legacy.map(x=>`<tr><td>${escapeHtml(households[x.hid]?.block||x.hid)}</td><td>${escapeHtml(x.cat)}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")}</tbody></table></div>`:""}
+  <div class="muted-note" style="margin-top:14px">Deposit bukan pemasukan. Saldo deposit mengurangi dana bebas yang boleh digunakan untuk pengeluaran sampai deposit tersebut dipakai membayar tagihan Air.</div>`;
 }
 
 async function ensureXLSX(){
@@ -686,15 +691,14 @@ async function renderWaterMeters(c){
   });
 }
 async function renderCategory(c,cat){
-  const [bal,monthly,depositRows,settings,arrearsLedger]=await Promise.all([
+  const [bal,monthly,position,settings,arrearsLedger]=await Promise.all([
     read(`category_balances/${cat}`),
     read("financeSummaryByMonth"),
-    read("deposits"),
+    getFinancialPosition(),
     getBillingSettings(),
     read("arrearsLedger")
   ]);
-  const depositTotal=Object.values(depositRows||{}).reduce((sum,cats)=>sum+(Number(cats?.[cat])||0),0);
-  const balance={...(bal||{}),deposit:depositTotal},period=monthKey(),year=Number(period.slice(0,4));
+  const balance={...(bal||{}),deposit:position[cat].depositLiability,cashBalance:position[cat].cashBalance,availableBalance:position[cat].availableBalance,advance:position[cat].advanceLiability},period=monthKey(),year=Number(period.slice(0,4));
   const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(settings.goLivePeriod||"")?settings.goLivePeriod:`${year}-01`;
   const yearStart=`${year}-01`;
   const firstPeriod=goLive>yearStart?goLive:yearStart;
@@ -715,7 +719,7 @@ async function renderCategory(c,cat){
   const activeKeys=Array.from({length:Math.max(0,lastMonth-firstMonth+1)},(_,i)=>`${year}-${String(firstMonth+i).padStart(2,"0")}`);
   const activeIncome=activeKeys.reduce((sum,key)=>sum+(Number(monthly?.[key]?.byCategory?.[cat]?.income)||0),0);
   const activeExpenses=activeKeys.reduce((sum,key)=>sum+(Number(monthly?.[key]?.byCategory?.[cat]?.expenses)||0),0);
-  const opening=(Number(balance.balance)||0)-activeIncome+activeExpenses;
+  const opening=balance.availableBalance-activeIncome+activeExpenses;
   let running=opening,totalIn=0,totalOut=0;
   const rows=activeKeys.map(key=>{
     const monthIndex=Number(key.slice(5,7))-1,name=monthNames[monthIndex];
@@ -726,15 +730,15 @@ async function renderCategory(c,cat){
     return `<tr><td><b>${name}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount">${money(end)}</td></tr>`;
   }).join("");
   const ledgerRows=rows||'<tr><td colspan="5" class="empty">Belum ada periode pembukuan aktif pada tahun ini.</td></tr>';
-  const stats=`<div class="grid stats">${card("Saldo operasional saat ini",money(balance.balance))}${card("Pemasukan tercatat",money(balance.income))}${card("Pengeluaran tercatat",money(balance.expense))}${card("Deposit warga",money(balance.deposit))}</div>
+  const stats=`<div class="grid stats">${card("Dana bebas saat ini",money(balance.availableBalance),"Setelah dikurangi kewajiban")}${card("Uang kas/bank",money(balance.cashBalance),"Saldo uang nyata")}${card("Pengeluaran tercatat",money(balance.expense))}${card("Deposit Air",money(balance.deposit))${card("Uang muka",money(balance.advance))}}</div>
   <div class="section-head"><div><h3>Total Tunggakan sampai ${period}</h3><p class="tiny muted">Akumulasi sisa kewajiban ${labels[cat]} sejak awal pembukuan digital</p></div><span class="pill warning">${money(due)}</span></div>
   <div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Periode tunggakan</th><th>Sisa belum dibayar</th></tr></thead><tbody>${dueRows.map(([key,amount])=>`<tr><td>${key}</td><td class="amount">${money(amount)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">Tidak ada tunggakan sejak awal pembukuan.</td></tr>'}</tbody><tfoot><tr><th>Total sampai ${period}</th><th class="amount">${money(due)}</th></tr></tfoot></table></div>`;
   const ledger=`<section class="panel monthly-ledger">
-    <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Periode aktif: ${firstPeriod} sampai ${period}. Saldo akhir berjalan ke bulan berikutnya.</p></div><span class="pill">${firstPeriod} – ${period}</span></div>
+    <div class="section-head ledger-heading"><div><h3>Mutasi bulanan ${year}</h3><p class="tiny muted">Periode aktif: ${firstPeriod} sampai ${period}. Dana bebas berjalan ke bulan berikutnya.</p></div><span class="pill">${firstPeriod} – ${period}</span></div>
     <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${ledgerRows}<tr class="ledger-total"><td><b>Akumulasi periode aktif</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIn)}</td><td class="amount expense-value">${money(totalOut)}</td><td class="amount">${money(running)}</td></tr></tbody></table></div>
-    <p class="tiny muted ledger-note">Periode sebelum bulan mulai aplikasi tidak ditampilkan sebagai mutasi digital. Saldo awal diambil mundur dari saldo operasional saat ini dikurangi pemasukan dan ditambah pengeluaran sejak periode aktif.</p>
+    <p class="tiny muted ledger-note">Periode sebelum bulan mulai aplikasi tidak ditampilkan sebagai mutasi digital. Saldo awal dihitung dari dana bebas saat ini dikurangi penerimaan yang sudah dialokasikan dan ditambah pengeluaran sejak periode aktif.</p>
   </section>`;
-  c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit warga ditampilkan terpisah dan tidak dijumlahkan sebagai pemasukan operasional.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
+  c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit dan uang muka ditampilkan sebagai kewajiban, bukan pemasukan.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
 async function renderExpenses(c){
   const current=monthKey(),position=await getFinancialPosition();
@@ -876,9 +880,9 @@ async function renderReports(c){
     if(!row){host.innerHTML='<p class="muted">Belum ada rekap tahun ini. Klik “Buat / Perbarui Rekap Tahun”.</p>';return;}
     const names={kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air"};
     host.innerHTML=`<div class="section-head"><h3>Rekap Keuangan ${row.year}</h3><span class="pill">Dibuat ${new Date(row.generatedAt).toLocaleString("id-ID")}</span></div>
-      <div class="grid category-grid">${["kas","sampah","air"].map(cat=>{const x=row.byCategory?.[cat]||{};return categoryCard(names[cat],x.closingOperatingBalance,x.income,x.expenses,x.depositLiability);}).join("")}</div>
-      <div class="table-wrap"><table><thead><tr><th>Kategori</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir operasional</th><th>Deposit warga</th></tr></thead><tbody>${["kas","sampah","air"].map(cat=>{const x=row.byCategory?.[cat]||{};return `<tr><td>${names[cat]}</td><td class="amount">${money(x.openingBalance)}</td><td class="amount">${money(x.income)}</td><td class="amount">${money(x.expenses)}</td><td class="amount">${money(x.closingOperatingBalance)}</td><td class="amount">${money(x.depositLiability)}</td></tr>`;}).join("")}</tbody></table></div>
-      <div class="grid stats" style="margin-top:14px">${card("Total tunggakan saat rekap",money(row.arrearsAtSnapshot?.total),"Posisi saat rekap dibuat")}${card("Total deposit warga",money(row.depositLiabilityAtSnapshot),"Kewajiban deposit saat rekap dibuat")}${card("Saldo operasional saat rekap",money(row.operatingBalanceAtSnapshot),"Posisi saat rekap dibuat")}</div>`;
+      <div class="grid category-grid">${["kas","sampah","air"].map(cat=>{const x=row.byCategory?.[cat]||{};return `<div class="category-card"><h4>${names[cat]}</h4><div class="balance">${money(x.closingOperatingBalance)}</div><div class="muted tiny">Dana bebas akhir tahun</div><div class="metric-row"><span>Penerimaan dialokasikan</span><b>${money(x.income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(x.expenses)}</b></div><div class="metric-row"><span>Deposit Air</span><b>${money(x.depositLiability)}</b></div><div class="metric-row"><span>Uang muka</span><b>${money(x.advanceLiability)}</b></div></div>`;}).join("")}</div>
+      <div class="table-wrap"><table><thead><tr><th>Kategori</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir operasional</th><th>Deposit Air</th><th>Uang muka</th></tr></thead><tbody>${["kas","sampah","air"].map(cat=>{const x=row.byCategory?.[cat]||{};return `<tr><td>${names[cat]}</td><td class="amount">${money(x.openingBalance)}</td><td class="amount">${money(x.income)}</td><td class="amount">${money(x.expenses)}</td><td class="amount">${money(x.closingOperatingBalance)}</td><td class="amount">${money(x.depositLiability)}</td><td class="amount">${money(x.advanceLiability)}</td></tr>`;}).join("")}</tbody></table></div>
+      <div class="grid stats" style="margin-top:14px">${card("Total tunggakan saat rekap",money(row.arrearsAtSnapshot?.total),"Posisi saat rekap dibuat")}${card("Total deposit Air",money(row.depositLiabilityAtSnapshot),"Kewajiban warga")}${card("Uang muka",money(row.advanceLiabilityAtSnapshot),"Belum diterapkan ke tagihan")}${card("Dana bebas saat rekap",money(row.operatingBalanceAtSnapshot),"Setelah seluruh kewajiban")}</div>`;
   };
   $("#annualReportYear").addEventListener("change",draw);
   $("#buildAnnualReportBtn").addEventListener("click",async()=>{
@@ -894,8 +898,9 @@ async function renderReports(c){
     const accountBalance=key=>Number(ledger.accounts[key]?.balance)||0;
     const receivable=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,accountBalance("asset.receivable."+cat)),0);
     const depositLiability=["kas","air","sampah"].reduce((n,cat)=>n+Math.max(0,-accountBalance("liability.deposit."+cat)),0);
+    const advanceLiability=["kas","sampah"].reduce((n,cat)=>n+Math.max(0,-accountBalance("liability.advance."+cat)),0);
     accountingHost.innerHTML=`<div class="section-head"><div><h3>Pembukuan Akrual · Jurnal Debit/Kredit</h3><p class="tiny muted">Tagihan bukan penerimaan kas. Laporan dihitung dari jurnal yang diposting.</p></div><span class="pill ${tb.balanced?"success":"danger"}">${tb.balanced?"Seimbang":"Tidak seimbang"}</span></div>
-      <div class="grid stats"><div class="stat"><div class="label">Kas masuk ${year}</div><div class="value">${money(flow.inflow)}</div></div><div class="stat"><div class="label">Kas keluar ${year}</div><div class="value">${money(flow.outflow)}</div></div><div class="stat"><div class="label">Piutang</div><div class="value">${money(receivable)}</div></div><div class="stat"><div class="label">Utang deposit</div><div class="value">${money(depositLiability)}</div></div></div>
+      <div class="grid stats"><div class="stat"><div class="label">Kas masuk ${year}</div><div class="value">${money(flow.inflow)}</div></div><div class="stat"><div class="label">Kas keluar ${year}</div><div class="value">${money(flow.outflow)}</div></div><div class="stat"><div class="label">Piutang</div><div class="value">${money(receivable)}</div></div><div class="stat"><div class="label">Utang deposit</div><div class="value">${money(depositLiability)}</div></div><div class="stat"><div class="label">Uang muka belum diterapkan</div><div class="value">${money(advanceLiability)}</div></div></div>
       <div class="summary-box" style="margin:14px 0"><div class="summary-line"><span>Arus kas bersih ${year}</span><b>${money(flow.net)}</b></div><div class="summary-line"><span>Total debit</span><b>${money(tb.totalDebit)}</b></div><div class="summary-line"><span>Total kredit</span><b>${money(tb.totalCredit)}</b></div></div>
       <h4>Neraca saldo per akun</h4><div class="table-wrap"><table><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th><th>Saldo (D-K)</th></tr></thead><tbody>${tb.rows.map(x=>`<tr><td>${x.account}</td><td class="amount">${money(x.debit)}</td><td class="amount">${money(x.credit)}</td><td class="amount">${money(x.balance)}</td></tr>`).join("")||'<tr><td colspan="4">Belum ada jurnal.</td></tr>'}</tbody><tfoot><tr><th>Total</th><th>${money(tb.totalDebit)}</th><th>${money(tb.totalCredit)}</th><th>—</th></tr></tfoot></table></div>
       <p class="tiny muted" style="margin-top:12px">Piutang dan deposit dihitung dari jurnal terposting. Pastikan saldo awal dan koreksi meter juga telah dijurnal agar laporan lengkap.</p>`;
