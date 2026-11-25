@@ -492,7 +492,7 @@ export async function editWaterReading({period,householdId,currentMeter,recorded
   const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(bill?.amount)||0),createdAt:timestamp});
   if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
-  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining,{airUsageM3:usage}));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
   await refreshPublicSnapshotSafely();
   return reading;
@@ -529,7 +529,7 @@ export async function saveWaterReading({period,householdId,currentMeter,recorded
   const adjustment=buildInvoiceAdjustmentJournal({id:"water_adjustment_"+period+"_"+householdId+"_"+timestamp,period,date:period+"-01",householdId,category:"air",delta:total-(Number(bill.amount)||0),createdAt:timestamp});
   if(adjustment)updates["journal_entries/"+adjustment.id]=adjustment;
   await writeAndVerify(updates,[`water_readings/${period}/${householdId}`,`bills/${period}/${householdId}/air`,`households/${householdId}/currentWaterMeter`]);
-  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining));
+  await retryIdempotent(()=>setHouseholdArrearPeriod(householdId,period,"air",remaining,{airUsageM3:usage}));
   await retryIdempotent(()=>applyDepositToWaterBill(period,householdId,recordedBy));
   await refreshPublicSnapshotSafely();
   return reading;
