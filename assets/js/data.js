@@ -283,7 +283,7 @@ export async function createMonthlyBills(period, recordedBy) {
     const active=Object.entries(homes).filter(([,h])=>h && h.status!=="empty" && h.status!=="inactive");
     if(!active.length) throw new Error("Tidak ada rumah aktif/kontrak yang dapat dibuatkan tagihan.");
     if(Object.keys(existing).length) throw new Error("Data tagihan periode ini sudah ada. Proses dihentikan agar tidak menimpa tagihan.");
-    const updates={},depositSummary={kas:0,air:0,sampah:0},summaryDeltas=[];
+    const updates={},summaryDeltas=[];
     const now=Date.now();
     for(const [id,h] of active){
       const raw={kas:Number(settings.kasMonthly)||0,sampah:Number(settings.sampahMonthly)||0,air:Number(settings.waterAdmin)||0};
@@ -326,7 +326,7 @@ export async function createMonthlyBills(period, recordedBy) {
         const available=Math.max(0,Number(deposits?.[id]?.[cat])||0);
         const used=Math.min(available,Math.max(0,Number(row[cat].remaining)||0));
         if(used>0){
-          applied[cat]=used;depositSummary[cat]+=used;
+          applied[cat]=used;
           summaryDeltas.push({id:"deposit_auto_"+period+"_"+id+"_air",category:"air",amount:used,description:"Pelunasan tagihan Air dari deposit"});
           row[cat].paidAmount=Number(row[cat].paidAmount||0)+used;row[cat].remaining=Math.max(0,Number(row[cat].remaining||0)-used);row[cat].depositAppliedAmount=Number(row[cat].depositAppliedAmount||0)+used;
           row[cat].status=row[cat].remaining===0?"paid":"partial";
@@ -359,7 +359,6 @@ export async function createMonthlyBills(period, recordedBy) {
     updates[`billing_runs/${period}/recordedBy`]=recordedBy||null;
     const verifyPaths=[`billing_runs/${period}/status`,`bills/${period}`];
     for(const [id] of active) verifyPaths.push(`arrearsLedger/${id}/${period}`);
-    for(const cat of ["air"]) if(depositSummary[cat]>0) verifyPaths.push(`category_balances/${cat}`);
     if(Object.keys(updates).some(path=>path.startsWith("deposits/"))) verifyPaths.push("deposits");
     if(Object.keys(updates).some(path=>path.startsWith("deposit_ledger/"))) verifyPaths.push("deposit_ledger");
     if(Object.keys(updates).some(path=>path.startsWith(`paymentsByMonth/${period}/`))) verifyPaths.push(`paymentsByMonth/${period}`);
