@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a43"><title>Preview Uji — Keuangan Perum Puri Papahan</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#172b4d;background:#f3f6fa;font-size:15px}*{box-sizing:border-box}body{margin:0}.demo{background:#fff4d6;color:#704c00;padding:10px 14px;text-align:center;font-size:13px;font-weight:700;position:sticky;top:0;z-index:5}.wrap{max-width:920px;margin:auto;padding:16px}.head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.brand{font-weight:800;font-size:18px}.sub{font-size:12px;color:#68778d}.tabs{display:flex;gap:8px;overflow:auto;margin:12px 0 18px}.tabs button,.btn{border:0;border-radius:10px;padding:11px 14px;background:#e8eef6;color:#20334e;font-weight:700;white-space:nowrap}.tabs button.active,.btn.primary{background:#145da0;color:white}.panel{background:white;border:1px solid #e3e9f1;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 4px 18px #102a4308}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{padding:14px;border-radius:12px;background:#f5f8fc}.stat small{display:block;color:#66758a}.stat b{display:block;font-size:21px;margin-top:6px}.muted{color:#68778d;font-size:13px}.row{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #edf1f5}.row:last-child{border:0}.section{font-size:17px;margin:4px 0 12px}.field{display:block;margin:12px 0}.field span{display:block;font-size:13px;font-weight:700;margin-bottom:6px}.field input,.field select{width:100%;padding:12px;border:1px solid #ccd6e2;border-radius:10px;background:white;font:inherit}.months{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.month{border:1px solid #d9e1ec;border-radius:9px;padding:9px 5px;text-align:center;font-size:13px}.month input{display:block;margin:0 auto 5px;accent-color:#145da0}.month.paid{background:#eaf7ef;border-color:#b8dfc5}.summary{background:#eef5fc;border-radius:12px;padding:12px;margin:12px 0}.summary .row{padding:6px 0}.notice{padding:12px;border-radius:10px;background:#fef3e7;color:#7b4b13;font-size:13px}.btn{cursor:pointer}.btn:disabled{opacity:.45}.hide{display:none!important}.ok{color:#14733b;font-weight:700}.danger{color:#a43a36}.bottom{font-size:12px;color:#728096;text-align:center;padding:16px}@media(min-width:700px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.months{grid-template-columns:repeat(6,1fr)}} 
+</style>
+</head>
+<body>
+<div class="demo">MODE SIMULASI — data contoh di perangkat ini saja. Tidak terhubung ke Firebase dan tidak menyimpan transaksi produksi.</div>
+<main class="wrap">
+<header class="head"><div><div class="brand">Keuangan Perum Puri Papahan</div><div class="sub">Preview tampilan dan alur pembayaran · versi pengujian</div></div><button class="btn" id="reset">Reset simulasi</button></header>
+<nav class="tabs"><button class="active" data-tab="dashboard">Dashboard</button><button data-tab="payment">Pembayaran</button><button data-tab="expense">Pengeluaran</button><button data-tab="report">Laporan</button></nav>
+<section id="dashboard">
+<h2 class="section">Ringkasan keuangan</h2>
+<div class="grid">
+<div class="stat"><small>Kas/bank fisik</small><b id="cash">Rp 2.500.000</b></div>
+<div class="stat"><small>Dana tersedia</small><b id="available">Rp 2.200.000</b></div>
+<div class="stat"><small>Deposit Air</small><b id="deposit">Rp 200.000</b></div>
+<div class="stat"><small>Uang muka</small><b id="advance">Rp 100.000</b></div>
+</div>
+<div class="panel"><h3 class="section">Status dana</h3><div class="row"><span>Kas RT</span><b>Rp 1.200.000</b></div><div class="row"><span>Air</span><b>Rp 900.000</b></div><div class="row"><span>Sampah</span><b>Rp 400.000</b></div><p class="muted">Saldo fisik dikurangi deposit warga dan uang muka yang belum diterapkan untuk mendapatkan dana yang boleh digunakan.</p></div>
+<div class="panel"><h3 class="section">Panduan singkat</h3><p class="muted">Gunakan menu Pembayaran untuk mencoba centang bulan Kas RT/Sampah, pembayaran sebagian Air, dan kelebihan Air yang menjadi deposit. Semua perubahan hanya simulasi sementara.</p><button class="btn primary" data-go="payment">Coba pembayaran</button></div>
+</section>
+<section id="payment" class="hide">
+<h2 class="section">Pencatatan pembayaran warga</h2>
+<div class="panel">
+<label class="field"><span>Pilih rumah</span><select id="house"><option value="A-01">A-01 · Budi Santoso</option><option value="A-02">A-02 · Siti Aminah</option><option value="B-01">B-01 · Rudi Hartono</option></select></label>
+<p class="muted">Contoh tagihan rumah A-01. Kas RT dan Sampah harus berurutan dan lunas penuh. Air dapat dibayar sebagian.</p>
+<div class="grid">
+<div><h3 class="section">Kas RT · Rp 30.000/bulan</h3><div class="months" id="kasMonths"></div></div>
+<div><h3 class="section">Sampah · Rp 10.000/bulan</h3><div class="months" id="trashMonths"></div></div>
+</div>
+<label class="field"><span>Pembayaran Air (Rp)</span><input id="water" type="number" inputmode="numeric" min="0" step="1000" value="0"></label>
+<div class="summary">
+<div class="row"><span>Kas RT dipilih</span><b id="kasTotal">Rp 0</b></div>
+<div class="row"><span>Sampah dipilih</span><b id="trashTotal">Rp 0</b></div>
+<div class="row"><span>Tagihan Air contoh</span><b>Rp 75.000</b></div>
+<div class="row"><span>Deposit Air digunakan</span><b>Rp 25.000</b></div>
+<div class="row"><span>Tunai Air diterima</span><b id="waterCash">Rp 0</b></div>
+<div class="row"><span>Kelebihan Air → deposit</span><b id="surplus">Rp 0</b></div>
+<div class="row"><strong>Total tunai diterima</strong><b id="total">Rp 0</b></div>
+</div>
+<div class="notice" id="ruleMsg">Centang bulan pertama yang belum lunas. Bulan setelahnya baru dapat dipilih secara berurutan.</div>
+<button class="btn primary" id="simulate">Simulasikan pembayaran</button>
+<p id="paymentResult" class="muted" aria-live="polite"></p>
+</div>
+</section>
+<section id="expense" class="hide">
+<h2 class="section">Simulasi pengeluaran</h2><div class="panel">
+<label class="field"><span>Kategori</span><select id="category"><option value="kas">Kas RT</option><option value="air">Air</option><option value="sampah">Sampah</option></select></label>
+<label class="field"><span>Nominal pengeluaran (Rp)</span><input id="amount" type="number" min="0" inputmode="numeric" value="100000"></label>
+<div class="summary"><div class="row"><span>Kas/bank fisik</span><b id="expenseCash">Rp 2.500.000</b></div><div class="row"><span>Kewajiban deposit & uang muka</span><b>Rp 300.000</b></div><div class="row"><strong>Dana tersedia</strong><b id="expenseAvailable">Rp 2.200.000</b></div></div>
+<button class="btn primary" id="checkExpense">Periksa pengeluaran</button><p id="expenseResult" aria-live="polite"></p>
+</div></section>
+<section id="report" class="hide"><h2 class="section">Ringkasan simulasi</h2><div class="panel"><div class="row"><span>Penerimaan simulasi</span><b id="incomeReport">Rp 0</b></div><div class="row"><span>Pengeluaran simulasi</span><b id="expenseReport">Rp 0</b></div><div class="row"><span>Saldo fisik simulasi</span><b id="reportCash">Rp 2.500.000</b></div><p class="muted">Ini bukan laporan resmi dan tidak mengubah laporan pada aplikasi utama.</p></div></section>
+<div class="bottom">Preview mandiri · Tidak ada login · Tidak ada koneksi atau penulisan ke Firebase</div>
+</main>
+<script>
+const fmt=n=>"Rp "+new Intl.NumberFormat("id-ID").format(n||0);let cash=2500000,deposit=200000,advance=100000,income=0,expenses=0,waterPaid=0;const paid={kas:[true,true,false,false,false,false,false,false,false,false,false,false],sampah:[true,true,false,false,false,false,false,false,false,false,false,false]};const months=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+function draw(){for(const cat of ["kas","sampah"]){const root=document.getElementById(cat==="kas"?"kasMonths":"trashMonths");root.innerHTML="";let first=paid[cat].findIndex(x=>!x);months.forEach((m,i)=>{const label=document.createElement("label");label.className="month"+(paid[cat][i]?" paid":"");const cb=document.createElement("input");cb.type="checkbox";cb.checked=paid[cat][i];cb.disabled=paid[cat][i]||first<0||i!==first;cb.addEventListener("change",()=>{paid[cat][i]=true;draw();});label.append(cb,document.createTextNode(m));root.append(label);});}
+const kas=paid.kas.filter(Boolean).length*30000-60000,trash=paid.sampah.filter(Boolean).length*10000-20000,w=Math.max(0,Number(document.getElementById("water").value)||0),applied=Math.min(w,50000),surplus=Math.max(0,w-50000);document.getElementById("kasTotal").textContent=fmt(kas);document.getElementById("trashTotal").textContent=fmt(trash);document.getElementById("waterCash").textContent=fmt(w);document.getElementById("surplus").textContent=fmt(surplus);document.getElementById("total").textContent=fmt(kas+trash+w);document.getElementById("ruleMsg").textContent="Kas RT/Sampah tidak dapat melompati bulan. Tagihan Air tersisa Rp 50.000 setelah deposit contoh Rp 25.000 digunakan.";}
+function nav(tab){document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["dashboard","payment","expense","report"].forEach(id=>document.getElementById(id).classList.toggle("hide",id!==tab));}
+document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>nav(b.dataset.tab));document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>nav(b.dataset.go));document.getElementById("water").oninput=draw;
+document.getElementById("simulate").onclick=()=>{const w=Math.max(0,Number(document.getElementById("water").value)||0),surplus=Math.max(0,w-50000);cash+=w;deposit+=surplus;income+=w;waterPaid+=w;document.getElementById("paymentResult").innerHTML='<span class="ok">Simulasi berhasil.</span> Uang tunai Air bertambah '+fmt(w)+', deposit bertambah '+fmt(surplus)+'. Tidak ada data yang dikirim ke server.';document.getElementById("cash").textContent=fmt(cash);document.getElementById("deposit").textContent=fmt(deposit);document.getElementById("available").textContent=fmt(cash-deposit-advance);document.getElementById("incomeReport").textContent=fmt(income);document.getElementById("reportCash").textContent=fmt(cash);};
+document.getElementById("checkExpense").onclick=()=>{const n=Math.max(0,Number(document.getElementById("amount").value)||0),available=cash-deposit-advance;const out=document.getElementById("expenseResult");if(n>available){out.className="danger";out.textContent="Ditolak: dana tersedia hanya "+fmt(available)+". Deposit dan uang muka tidak boleh dipakai.";}else{cash-=n;expenses+=n;out.className="ok";out.textContent="Lolos pemeriksaan simulasi. Pengeluaran "+fmt(n)+" dapat dicatat.";document.getElementById("expenseCash").textContent=fmt(cash);document.getElementById("expenseAvailable").textContent=fmt(cash-deposit-advance);document.getElementById("cash").textContent=fmt(cash);document.getElementById("available").textContent=fmt(cash-deposit-advance);document.getElementById("expenseReport").textContent=fmt(expenses);document.getElementById("reportCash").textContent=fmt(cash);}};
+document.getElementById("reset").onclick=()=>location.reload();draw();
+</script>
+</body></html>
