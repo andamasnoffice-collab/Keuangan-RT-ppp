@@ -238,6 +238,7 @@ export async function renderPaymentPage(container,{households,monthKey,toast,cur
               const recognizedAirCash=paymentRecognizedCash({cash:airCash,applied:airApplied,cashApplied:airApplied});
               if(recognizedAirCash>0)summaryDeltas.push({id:txRef.key,category:"air",amount:recognizedAirCash,description:desc});
             }
+            if(airDepositUsed>0)summaryDeltas.push({id:"deposit_application_"+paymentRef.key,category:"air",amount:airDepositUsed,description:"Pelunasan tagihan Air dari deposit"});
             totalDepositUsed+=airDepositUsed;totalSurplus+=airSurplus;
             items.push({cat:"air",cash:airCash,cashApplied:airApplied,depositUsed:airDepositUsed,applied:airAppliedTotal,surplus:airSurplus,remaining:Math.max(0,airGross-airDepositUsed-airApplied)});
           }
