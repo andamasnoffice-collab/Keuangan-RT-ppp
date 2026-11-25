@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261120-auditfix1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261120-auditfix1";
 import { renderPaymentPage } from "./payments.js?v=20261120-auditfix1";
 import { renderWhatsAppPage } from "./whatsapp.js?v=20261120-auditfix1";
 import { renderOpeningMigration } from "./migration.js?v=20261120-auditfix1";
@@ -131,7 +131,8 @@ observeSession((user,profile)=>{
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2600);}
 function title(s){$("#pageTitle").textContent=s;}
 function card(label,value,sub=""){return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;}
-function categoryCard(name,balance,income,expense,deposit){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(balance)}</div><div class="muted tiny">Saldo operasional</div><div class="metric-row"><span>Pemasukan</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div></div>`;}
+function categoryCard(name,cashBalance,availableBalance,income,expense,deposit,advance){return `<div class="category-card"><h4>${name}</h4><div class="balance">${money(availableBalance)}</div><div class="muted tiny">Dana bebas digunakan</div><div class="metric-row"><span>Uang kas/bank</span><b>${money(cashBalance)}</b></div><div class="metric-row"><span>Deposit warga</span><b>${money(deposit)}</b></div><div class="metric-row"><span>Uang muka belum diterapkan</span><b>${money(advance)}</b></div><div class="metric-row"><span>Pemasukan diakui</span><b>${money(income)}</b></div><div class="metric-row"><span>Pengeluaran</span><b>${money(expense)}</b></div></div>`;}
+
 async function render(){
   if(!currentUser){ renderGuestPage(); return; }
   const names={dashboard:"Dashboard",publicBills:"Daftar Tagihan",payments:"Pembayaran",householdLedger:"Mutasi Warga",households:"Rumah & Warga",deposits:"Deposit Warga",kas:"Kas RT",sampah:"Uang Sampah",air:"Uang Air",waterMeters:"Meteran Air",expenses:"Pengeluaran",transactions:"Semua Transaksi",reports:"Laporan",whatsapp:"WhatsApp Tagihan",settings:"Pengaturan",masterData:"Master Data",openingMigration:"Migrasi Pembukuan"};
@@ -302,22 +303,16 @@ function escapeHtml(value){
 }
 
 async function renderDashboard(c){
-  const [balances,depositRows]=await Promise.all([read("category_balances"),read("deposits")]);
-  const totals=["kas","sampah","air"].map(k=>{
-    const row=balances?.[k]||{};
-    const deposit=Object.values(depositRows||{}).reduce((sum,cats)=>sum+(Number(cats?.[k])||0),0);
-    return {...row,deposit,cashOnHand:(Number(row.balance)||0)+deposit};
-  });
-  const operating=totals.reduce((sum,row)=>sum+(Number(row.balance)||0),0);
-  const deposits=totals.reduce((sum,row)=>sum+row.deposit,0);
-  const cashOnHand=operating+deposits;
+  const [balances,position]=await Promise.all([read("category_balances"),getFinancialPosition()]);
+  const totals=["kas","sampah","air"].map(k=>({...balances?.[k],cashBalance:position[k].cashBalance,availableBalance:position[k].availableBalance,deposit:position[k].depositLiability,advance:position[k].advanceLiability}));
+  const operating=position.totals.availableBalance,deposits=position.totals.depositLiability,advances=position.totals.advanceLiability,cashOnHand=position.totals.cashBalance;
   const homes=Object.values(households);
   const announcement=await read("public_views/announcement")||{active:false,title:"",message:""};
-  c.innerHTML=`  <section class="panel announcement-editor" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pengumuman warga</h3><p class="tiny muted">Tulis informasi yang akan dibaca seluruh warga pada Dashboard publik.</p></div><span class="pill">Publik</span></div><label class="field">Judul pengumuman<input id="announcementTitle" maxlength="90" value="${escapeHtml(announcement.title||"")}" placeholder="Contoh: Jadwal kerja bakti"></label><label class="field">Isi pengumuman<textarea id="announcementMessage" rows="4" maxlength="2000" placeholder="Tuliskan informasi untuk warga...">${escapeHtml(announcement.message||"")}</textarea></label><div class="toolbar"><label class="announcement-toggle"><input id="announcementActive" type="checkbox" ${announcement.active?"checked":""}> Tampilkan pengumuman kepada warga</label><button type="button" id="saveAnnouncementBtn" class="btn secondary">Simpan Pengumuman</button></div><p class="tiny muted" id="announcementStatus">${announcement.updatedAt?"Terakhir diperbarui "+new Date(announcement.updatedAt).toLocaleString("id-ID"):"Belum ada pengumuman tersimpan."}</p></section><div id="billingCreationPanel" class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><div class="toolbar dashboard-billing-actions" style="margin-top:12px"><button type="button" id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><button type="button" id="publishPublicBtn" class="btn secondary">Perbarui Daftar Tagihan Publik</button></div><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div><div class="grid stats">${card("Total rumah",homes.length,"Data rumah terdaftar")}${card("Total anggota",homes.reduce((s,h)=>s+Object.keys(h.members||{}).length,0),"Anggota keluarga")}${card("Uang kas/bank",money(cashOnHand),"Termasuk dana deposit warga")}${card("Saldo operasional",money(operating),"Dana yang bebas digunakan")}${card("Total deposit warga",money(deposits),"Kewajiban yang harus tetap tersedia")}</div>
+  c.innerHTML=`  <section class="panel announcement-editor" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pengumuman warga</h3><p class="tiny muted">Tulis informasi yang akan dibaca seluruh warga pada Dashboard publik.</p></div><span class="pill">Publik</span></div><label class="field">Judul pengumuman<input id="announcementTitle" maxlength="90" value="${escapeHtml(announcement.title||"")}" placeholder="Contoh: Jadwal kerja bakti"></label><label class="field">Isi pengumuman<textarea id="announcementMessage" rows="4" maxlength="2000" placeholder="Tuliskan informasi untuk warga...">${escapeHtml(announcement.message||"")}</textarea></label><div class="toolbar"><label class="announcement-toggle"><input id="announcementActive" type="checkbox" ${announcement.active?"checked":""}> Tampilkan pengumuman kepada warga</label><button type="button" id="saveAnnouncementBtn" class="btn secondary">Simpan Pengumuman</button></div><p class="tiny muted" id="announcementStatus">${announcement.updatedAt?"Terakhir diperbarui "+new Date(announcement.updatedAt).toLocaleString("id-ID"):"Belum ada pengumuman tersimpan."}</p></section><div id="billingCreationPanel" class="panel" style="margin-top:16px"><div class="section-head" style="margin-top:0"><div><h3>Pembuatan tagihan bulanan</h3><p class="tiny muted">Tagihan dibuat manual oleh pengurus. Satu periode hanya dapat dibuat satu kali.</p></div><span id="billingRunBadge" class="pill">Memeriksa periode…</span></div><div class="toolbar dashboard-billing-actions" style="margin-top:12px"><button type="button" id="createMonthlyBillsBtn" class="btn primary">Buat Tagihan Bulan Ini · ${monthKey()}</button><button type="button" id="publishPublicBtn" class="btn secondary">Perbarui Daftar Tagihan Publik</button></div><p id="billingRunMessage" class="tiny muted" style="margin-top:8px"></p></div><div class="grid stats">${card("Total rumah",homes.length,"Data rumah terdaftar")}${card("Total anggota",homes.reduce((s,h)=>s+Object.keys(h.members||{}).length,0),"Anggota keluarga")}${card("Uang kas/bank",money(cashOnHand),"Uang nyata yang tercatat")}${card("Dana bebas digunakan",money(operating),"Setelah dikurangi seluruh kewajiban")}${card("Deposit warga",money(deposits),"Kewajiban deposit Air")}${card("Uang muka",money(advances),"Kas RT/Sampah untuk bulan mendatang")}</div>
 
   <div class="section-head"><h3>Saldo setiap kategori</h3><span class="pill">Periode ${monthKey()}</span></div>
-  <div class="grid category-grid">${categoryCard("Kas RT",totals[0].balance,totals[0].income,totals[0].expense,totals[0].deposit)}${categoryCard("Uang Sampah",totals[1].balance,totals[1].income,totals[1].expense,totals[1].deposit)}${categoryCard("Uang Air",totals[2].balance,totals[2].income,totals[2].expense,totals[2].deposit)}</div>
-  <div class="section-head"><h3>Rekonsiliasi kas</h3></div><div class="muted-note"><b>Uang kas/bank = saldo operasional + kewajiban deposit.</b> Deposit warga adalah uang yang sudah diterima tetapi belum menjadi dana operasional. Saat deposit dipakai membayar tagihan, uang kas/bank tidak bertambah lagi; hanya kewajiban deposit berkurang dan saldo operasional bertambah. Cocokkan total uang kas/bank ini dengan saldo rekening dan uang tunai yang benar-benar tersedia.</div>
+  <div class="grid category-grid">${categoryCard("Kas RT",totals[0].cashBalance,totals[0].availableBalance,totals[0].income,totals[0].expense,totals[0].deposit,totals[0].advance)}${categoryCard("Uang Sampah",totals[1].cashBalance,totals[1].availableBalance,totals[1].income,totals[1].expense,totals[1].deposit,totals[1].advance)}${categoryCard("Uang Air",totals[2].cashBalance,totals[2].availableBalance,totals[2].income,totals[2].expense,totals[2].deposit,totals[2].advance)}</div>
+  <div class="section-head"><h3>Rekonsiliasi kas</h3></div><div class="muted-note"><b>Rumus sederhana: dana bebas = uang kas/bank − deposit warga − uang muka.</b> Uang kas/bank adalah uang nyata yang sudah diterima. Deposit Air dan pembayaran Kas RT/Sampah untuk bulan mendatang masih menjadi kewajiban, sehingga belum boleh dipakai untuk pengeluaran. Saat kewajiban diterapkan ke tagihan, dana bebas bertambah tanpa menambah uang kas/bank.</div>
 
 `;
   $("#saveAnnouncementBtn").addEventListener("click",async()=>{
@@ -742,34 +737,40 @@ async function renderCategory(c,cat){
   c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit warga ditampilkan terpisah dan tidak dijumlahkan sebagai pemasukan operasional.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
 async function renderExpenses(c){
-  const current=monthKey();
-  c.innerHTML=`<div class="panel">
-    <div class="section-head" style="margin-top:0"><h3>Catat pengeluaran</h3><span class="pill">Saldo terpisah</span></div>
-    <p class="muted tiny">Pilih sumber dana yang benar. Pengeluaran akan mengurangi saldo kategori tersebut dan masuk ke riwayat transaksi.</p>
+  const current=monthKey(),position=await getFinancialPosition();
+  const categoryNames={kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"};
+  const moneyLine=cat=>`<div class="expense-position-grid"><div><small>Uang kas/bank</small><b>${money(position[cat].cashBalance)}</b></div><div><small>Deposit warga</small><b>${money(position[cat].depositLiability)}</b></div><div><small>Uang muka</small><b>${money(position[cat].advanceLiability)}</b></div><div class="expense-available"><small>Dana bebas</small><b>${money(position[cat].availableBalance)}</b></div></div>`;
+  c.innerHTML=`<div class="panel expense-entry-panel">
+    <div class="section-head" style="margin-top:0"><div><h3>Catat pengeluaran</h3><p class="tiny muted">Isi data pengeluaran. Sistem akan memeriksa dana bebas sebelum menyimpan.</p></div><span class="pill">Pengeluaran</span></div>
     <form id="expenseForm"><div class="form-grid">
-      <label class="field">Sumber dana<select name="category" required><option value="kas">Kas RT</option><option value="air">Kas Air</option><option value="sampah">Kas Sampah</option></select></label>
-      <label class="field">Nominal (Rp)<input name="amount" type="text" inputmode="numeric" data-rupiah placeholder="Rp 0" required></label>
-      <label class="field">Tanggal<input name="date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
-      <label class="field full-row">Keterangan pengeluaran<input name="description" maxlength="180" placeholder="Contoh: pembelian perlengkapan kebersihan" required></label>
-      <label class="field full-row">Bukti / nomor kuitansi / tautan bukti<input name="proof" maxlength="500" placeholder="Nomor kuitansi atau tautan foto bukti" required></label>
-    </div><button class="btn primary" type="submit">Simpan pengeluaran</button></form>
+      <label class="field">1. Sumber dana<select name="category" required><option value="kas">Kas RT</option><option value="air">Kas Air</option><option value="sampah">Kas Sampah</option></select></label>
+      <label class="field">2. Jumlah pengeluaran (Rp)<input name="amount" type="text" inputmode="numeric" data-rupiah placeholder="Contoh: 50.000" required></label>
+      <label class="field">3. Tanggal pengeluaran<input name="date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
+      <label class="field">4. Keterangan<input name="description" maxlength="180" placeholder="Contoh: pembelian perlengkapan kebersihan" required></label>
+      <label class="field full-row">Bukti / nomor kuitansi<input name="proof" maxlength="500" placeholder="Nomor kuitansi atau tautan foto bukti" required><small class="muted tiny">Wajib diisi agar transaksi mudah diperiksa kembali.</small></label>
+    </div><div id="expensePosition">${moneyLine("kas")}</div><button class="btn primary full" type="submit">Simpan pengeluaran</button></form>
   </div>
-  <div class="panel" style="margin-top:14px"><div class="section-head"><h3>Riwayat pengeluaran</h3><label class="field">Periode<input id="expensePeriod" type="month" value="${current}"></label></div><div id="expenseHistory" class="table-wrap">Memuat…</div></div>`;
+  <div class="panel" style="margin-top:14px"><div class="section-head"><div><h3>Riwayat pengeluaran</h3><p class="tiny muted">Pilih bulan untuk melihat transaksi.</p></div><label class="field">Bulan<input id="expensePeriod" type="month" value="${current}"></label></div><div id="expenseHistory" class="table-wrap">Memuat…</div></div>`;
   bindRupiahInputs($("#expenseForm"));
+  const categorySelect=$("#expenseForm").elements.category;
+  $("#expensePosition").innerHTML=moneyLine(categorySelect.value);
+  categorySelect.addEventListener("change",()=>{$("#expensePosition").innerHTML=moneyLine(categorySelect.value);});
   const drawHistory=async()=>{
     const period=$("#expensePeriod").value||current;
     const rows=Object.values(await getExpenses(period)||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
-    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(({kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"})[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Tidak ada pengeluaran pada periode ini.</td></tr>'}</tbody></table>`;
+    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(categoryNames[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada pengeluaran pada bulan ini.</td></tr>'}</tbody></table>`;
   };
   await drawHistory();
   $("#expensePeriod").addEventListener("change",drawHistory);
   $("#expenseForm").addEventListener("submit",async e=>{
-    e.preventDefault(); const f=new FormData(e.currentTarget); const button=e.currentTarget.querySelector('button[type="submit"]');
-    button.disabled=true; button.textContent="Menyimpan…";
+    e.preventDefault();const f=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type="submit"]');
+    button.disabled=true;button.textContent="Menyimpan…";
     try{
       const saved=await createExpense({category:f.get("category"),amount:parseRupiah(f.get("amount")),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
-      toast(saved.summarySyncPending?"Pengeluaran tersimpan, tetapi ringkasan bulanan perlu diperiksa. Jangan catat ulang.":"Pengeluaran berhasil disimpan dan saldo kategori diperbarui.");
-      e.currentTarget.reset(); e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10); $("#expensePeriod").value=String(f.get("date")).slice(0,7); await drawHistory();
+      toast(saved.summarySyncPending?"Pengeluaran tersimpan, tetapi ringkasan bulanan perlu diperiksa. Jangan catat ulang.":"Pengeluaran berhasil disimpan.");
+      e.currentTarget.reset();e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10);$("#expensePeriod").value=String(f.get("date")).slice(0,7);
+      const latest=await getFinancialPosition();for(const cat of ["kas","air","sampah"])position[cat]=latest[cat];
+      $("#expensePosition").innerHTML=moneyLine(categorySelect.value);await drawHistory();
     }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
     finally{button.disabled=false;button.textContent="Simpan pengeluaran";}
   });
