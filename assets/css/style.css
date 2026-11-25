@@ -596,3 +596,19 @@ td{color:var(--text)}
  .payment-quick-guide{font-size:12px}
  .expense-entry-panel{padding:14px}
 }
+
+/* Public arrears: readable per-house breakdown on mobile */
+.arrears-card-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.arrears-house-card{margin:0;min-width:0;padding:16px}
+.arrears-house-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.arrears-house-head h4{margin:4px 0 0;font-size:18px}
+.arrears-category-list{display:grid;gap:0}
+.arrears-category-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.arrears-category-row>div{display:grid;gap:4px;min-width:0}
+.arrears-category-row b{font-size:14px}
+.arrears-category-row small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.arrears-category-row strong{font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.arrears-usage{display:block;color:var(--accent);font-weight:700}
+.arrears-total{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:14px;font-weight:700}
+.arrears-total strong{font-size:19px;font-variant-numeric:tabular-nums}
+@media(max-width:760px){.arrears-card-list{grid-template-columns:1fr}.arrears-house-card{padding:14px}.arrears-house-head h4{font-size:17px}.arrears-house-head .pill{font-size:10px;white-space:nowrap}.arrears-category-row{padding:11px 0}}
