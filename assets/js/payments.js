@@ -1,7 +1,7 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { buildPaymentJournal, paymentRecognizedCash } from "./accounting.js";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261120-auditfix1";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261125-financefix1";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
