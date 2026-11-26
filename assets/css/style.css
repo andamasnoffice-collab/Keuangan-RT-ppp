@@ -612,3 +612,94 @@ td{color:var(--text)}
 .arrears-total{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:14px;font-weight:700}
 .arrears-total strong{font-size:19px;font-variant-numeric:tabular-nums}
 @media(max-width:760px){.arrears-card-list{grid-template-columns:1fr}.arrears-house-card{padding:14px}.arrears-house-head h4{font-size:17px}.arrears-house-head .pill{font-size:10px;white-space:nowrap}.arrears-category-row{padding:11px 0}}
+
+
+/* Mobile-first usability pass: navigation, spacing, forms and safe-area handling */
+html{max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}
+body{max-width:100%;overflow-x:hidden}
+.app-shell,.main,.content,#pageContent{min-width:0;max-width:100%}
+.table-wrap{width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.table-wrap table{max-width:none}
+button,a,input,select,textarea{touch-action:manipulation}
+:focus-visible{outline:3px solid color-mix(in srgb,var(--blue) 55%,transparent);outline-offset:2px}
+@media(max-width:760px){
+ body{padding-bottom:env(safe-area-inset-bottom)}
+ body:has(.sidebar.open){overflow:hidden}
+ body:has(.sidebar.open)::before{content:"";position:fixed;inset:0;z-index:29;background:rgba(3,12,22,.58);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+ .sidebar{z-index:30;width:min(84vw,300px);left:calc(-1 * min(84vw,300px));padding:calc(14px + env(safe-area-inset-top)) 13px calc(24px + env(safe-area-inset-bottom));border-radius:0 18px 18px 0}
+ .sidebar.open{left:0}
+ .sidebar .brand{padding:8px 8px 18px}
+ .sidebar-nav{padding-bottom:24px}
+ .main{width:100%;min-width:0}
+ .topbar{position:sticky;top:0;z-index:20;width:100%;height:64px;padding:0 11px;background:var(--surface);border-bottom:1px solid var(--line)}
+ .topbar>div:first-child{flex:1;min-width:0}
+ .topbar h2{max-width:42vw;font-size:16px}
+ .user-area{flex:0 0 auto;gap:5px}
+ .user-area .firebase-status{max-width:34px;min-width:28px;justify-content:center;overflow:hidden}
+ .user-area .firebase-status #connectionLabel{display:none}
+ .user-area .theme-toggle{min-width:38px;padding:7px}
+ .user-area .btn{min-height:38px;padding:7px 9px}
+ .content{width:100%;padding:13px 11px calc(112px + env(safe-area-inset-bottom))}
+ .content>.section-head:first-child{margin-top:4px}
+ .grid,.stats,.category-grid,.two-col,.form-grid{min-width:0;max-width:100%}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .stat,.panel,.card{min-width:0;padding:13px;border-radius:13px}
+ .stat .label{font-size:11px;line-height:1.35}
+ .stat .value{font-size:clamp(16px,4.8vw,20px);overflow-wrap:anywhere}
+ .stat .sub,.muted,.tiny{overflow-wrap:anywhere}
+ .category-grid{grid-template-columns:1fr}
+ .category-card{min-width:0;padding:14px}
+ .section-head{gap:9px;flex-wrap:wrap}
+ .section-head h3{font-size:15px}
+ .toolbar{display:flex;flex-wrap:wrap;align-items:stretch}
+ .toolbar>.btn,.toolbar>button{flex:1 1 145px;min-height:44px}
+ .field{min-width:0}
+ .field input,.field select,.field textarea,.search-input,
+ input:not([type=checkbox]):not([type=radio]),select,textarea{width:100%;min-width:0;min-height:44px;font-size:16px}
+ textarea{min-height:104px}
+ .table-wrap table{min-width:620px}
+ .dialog{width:calc(100vw - 24px);max-width:520px;max-height:calc(100dvh - 32px);margin:auto;padding:16px;overflow:auto;border-radius:16px}
+ dialog::backdrop{background:rgba(3,12,22,.68);backdrop-filter:blur(2px)}
+ .login-dialog{width:calc(100vw - 24px)}
+ .mobile-action-dock{left:8px;right:8px;bottom:calc(7px + env(safe-area-inset-bottom));gap:5px;padding:6px;border-radius:16px}
+ .dock-action{min-height:56px;padding:6px 2px;gap:4px;font-size:9px;border-radius:11px}
+ .dock-action svg{width:19px;height:19px}
+ .content{padding-bottom:calc(94px + env(safe-area-inset-bottom))}
+ .toast{bottom:calc(82px + env(safe-area-inset-bottom));left:10px;right:10px}
+ .announcement-editor .toolbar{display:grid;grid-template-columns:1fr}
+ .announcement-editor .toolbar .btn{width:100%}
+ .payment-month-checklist{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .arrears-card-list{grid-template-columns:1fr}
+ .arrears-house-card{padding:13px}
+ .household-tools,.household-import-actions{width:100%;align-items:stretch}
+ .household-import-actions>.btn,.household-tools>.btn{flex:1}
+}
+@media(max-width:480px){
+ .content{padding-left:10px;padding-right:10px}
+ .stats{grid-template-columns:1fr}
+ .stat{padding:12px 13px}
+ .stat .value{font-size:19px}
+ .dashboard-billing-actions{display:none!important}
+ .mobile-action-dock{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .dock-action{min-height:54px;font-size:8px}
+ .dock-action span{max-width:100%;overflow-wrap:anywhere}
+ .payment-month-checklist{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .payment-month-checklist .pay-month-row{min-width:0}
+ .deposit-balance-grid{grid-template-columns:1fr 1fr}
+ .expense-position-grid{grid-template-columns:1fr 1fr}
+ .section-head>.pill{max-width:100%;white-space:normal}
+}
+@media(max-width:360px){
+ .topbar{padding:0 8px}
+ .topbar h2{max-width:38vw;font-size:14px}
+ .user-area{gap:3px}
+ .user-area .theme-toggle{min-width:32px;padding:5px}
+ .user-area .btn{padding:6px 7px;font-size:10px}
+ .mobile-action-dock{left:5px;right:5px;gap:3px}
+ .dock-action{font-size:7px}
+}
+@media(orientation:landscape) and (max-height:500px) and (max-width:900px){
+ .topbar{position:relative}
+ .mobile-action-dock{position:sticky;left:auto;right:auto;bottom:auto;margin:8px}
+ .content{padding-bottom:18px}
+}
