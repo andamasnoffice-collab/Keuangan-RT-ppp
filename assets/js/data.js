@@ -760,7 +760,12 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
 }
 
 export async function getPublicDashboard() {
-  return await read("public_views/dashboard") || null;
+  const [dashboard,financeByMonth]=await Promise.all([
+    read("public_views/dashboard"),
+    read("public_views/financeByMonth")
+  ]);
+  if(!dashboard)return null;
+  return {...dashboard,financeByMonth:financeByMonth||{}};
 }
 
 export async function getPublicBills() {
