@@ -124,6 +124,27 @@ export function summarizeLedger(entries){
   const totalCredit=Object.values(accounts).reduce((s,a)=>s+a.credit,0);
   return {accounts,totalDebit,totalCredit,balanced:totalDebit===totalCredit};
 }
+
+export function buildPublicCashFlowSummary(transactionsByMonth={}) {
+  const result={};
+  for(const [period,records] of Object.entries(transactionsByMonth||{})){
+    if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(period)||!records||!Object.keys(records).length)continue;
+    const incomeItems={},expenseItems={};let income=0,expenses=0;
+    for(const [id,row] of Object.entries(records)){
+      const category=row?.category,amount=Math.max(0,Number(row?.amount)||0);
+      if(!CATS.includes(category)||amount<=0)continue;
+      const type=String(row?.type||"").toLowerCase(),description=String(row?.description||"").slice(0,120);
+      const depositApplication=/deposit/i.test(description)||type==="deposit_application"||type==="automatic_deposit_application";
+      if(type==="expense"||type==="pengeluaran"){
+        expenseItems[id]={date:row.date||null,category,amount,description:description||"Pengeluaran"};expenses+=amount;
+      }else if((type==="payment"||type==="income"||type==="pemasukan")&&!depositApplication){
+        incomeItems[id]={date:row.date||null,category,amount,description:description||"Penerimaan pembayaran warga"};income+=amount;
+      }
+    }
+    result[period]={income,expenses,incomeItems,expenseItems};
+  }
+  return result;
+}
 export function cashFlow(entries,{from,to}={}){
   const rows=[];
   for(const entry of Object.values(entries||{})){
