@@ -71,6 +71,15 @@ $("#loginForm").addEventListener("submit", async e=>{
 });
 $("#logoutBtn").addEventListener("click",()=>logout());
 $("#mobileMenu").addEventListener("click",()=>$(".sidebar").classList.toggle("open"));
+document.addEventListener("click",e=>{
+  const drawer=$(".sidebar");
+  if(!drawer?.classList.contains("open"))return;
+  if(e.target.closest(".sidebar")||e.target.closest("#mobileMenu"))return;
+  drawer.classList.remove("open");
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape")$(".sidebar")?.classList.remove("open");
+});
 $("#billingQuickBtn").addEventListener("click",async()=>{
   if(!currentUser)return;
   if(page!=="dashboard"){
