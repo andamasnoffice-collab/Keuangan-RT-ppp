@@ -675,7 +675,7 @@ export async function createExpense({category, amount, date, description, proof,
  * Never includes resident names, phone numbers, family members, or payment details.
  * Public pages read only /public_views; private source nodes remain auth-only.
  */
-export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary, arrearsLedger={}, announcement=null) {
+export async function publishPublicSnapshot(currentPeriod, households, balances, financeSummaryByMonth, arrearsSummary, arrearsLedger={}, announcement=null, goLivePeriod=null) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if(announcement===null) announcement=await read("public_views/announcement");
   const allOutstanding={};
@@ -729,14 +729,25 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
   for(const [period,summary] of Object.entries(financeSummaryByMonth||{})){
     const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:String(x.description||("Pemasukan "+publicCategoryLabel(x.category))).slice(0,120)}));
     const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:String(x.description||("Pengeluaran "+publicCategoryLabel(x.category))).slice(0,120)}));
+    const byCategory={};
+    for(const category of ["kas","air","sampah"]){
+      const saved=summary?.byCategory?.[category]||{};
+      const categoryIncome=incomeItems.filter(x=>x.category===category).reduce((sum,x)=>sum+(Number(x.amount)||0),0);
+      const categoryExpenses=expenseItems.filter(x=>x.category===category).reduce((sum,x)=>sum+(Number(x.amount)||0),0);
+      byCategory[category]={
+        income:Number(saved.income??categoryIncome)||0,
+        expenses:Number(saved.expenses??categoryExpenses)||0
+      };
+    }
     financeByMonth[period]={
+      byCategory,
       income:incomeItems,
       expenses:expenseItems,
-      totals:{income:Number(summary?.income)||0,expenses:Number(summary?.expenses)||0}
+      totals:{income:Number(summary?.income)||incomeItems.reduce((sum,x)=>sum+(Number(x.amount)||0),0),expenses:Number(summary?.expenses)||expenseItems.reduce((sum,x)=>sum+(Number(x.amount)||0),0)}
     };
   }
   const payload={
-    dashboard:{period:currentPeriod,householdCount:Object.keys(households||{}).length,outstandingHouseholds:Object.keys(allOutstanding).length,totalOutstanding,categories:categoryTotals,updatedAt:Date.now()},
+    dashboard:{period:currentPeriod,goLivePeriod:validPeriod(goLivePeriod)?goLivePeriod:currentPeriod,householdCount:Object.keys(households||{}).length,outstandingHouseholds:Object.keys(allOutstanding).length,totalOutstanding,categories:categoryTotals,updatedAt:Date.now()},
     allOutstanding,
     financeByMonth,
     ...(announcement?{announcement}:{}),
@@ -797,7 +808,7 @@ export async function buildAnnualSummary(year, recordedBy=null) {
 
 export async function refreshPublicSnapshot(currentPeriod, householdsOverride=null) {
   if(!validPeriod(currentPeriod)) throw new Error("Periode publik tidak valid.");
-  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances,transactionsByMonth,paymentsByMonth,expensesByMonth]=await Promise.all([
+  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances,transactionsByMonth,paymentsByMonth,expensesByMonth,billingSettings]=await Promise.all([
     householdsOverride||getHouseholds(),
     read("category_balances"),
     read("financeSummaryByMonth"),
@@ -807,14 +818,18 @@ export async function refreshPublicSnapshot(currentPeriod, householdsOverride=nu
     read("fixed_advance_payments"),
     read("transactionsByMonth"),
     read("paymentsByMonth"),
-    read("expensesByMonth")
+    read("expensesByMonth"),
+    getBillingSettings()
   ]);
   // Use the unified transaction ledger as the source of actual cash movements.
   const publicFinanceSummary={...(financeSummary||{})};
   const transactionSummary=buildPublicCashFlowSummary(transactionsByMonth||{});
   const transactionPeriods=new Set(Object.keys(transactionSummary));
   for(const [period,summary] of Object.entries(transactionSummary)){
-    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),...summary};
+    // Never replace the category totals used by the category mutation pages.
+    if(!publicFinanceSummary[period]?.byCategory){
+      publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),...summary};
+    }
   }
   // Fallback only for legacy periods without unified transaction records.
   for(const [period,records] of Object.entries(paymentsByMonth||{})){
@@ -844,7 +859,7 @@ export async function refreshPublicSnapshot(currentPeriod, householdsOverride=nu
   for(const category of ["kas","air","sampah"]){
     publicBalances[category]={...(balances?.[category]||{}),balance:position[category].availableBalance,cashBalance:position[category].cashBalance,depositLiability:position[category].depositLiability,advanceLiability:position[category].advanceLiability};
   }
-  return await publishPublicSnapshot(currentPeriod,homes||{},publicBalances,publicFinanceSummary,arrearsSummary||{},arrearsLedger||{});
+  return await publishPublicSnapshot(currentPeriod,homes||{},publicBalances,publicFinanceSummary,arrearsSummary||{},arrearsLedger||{},null,billingSettings?.goLivePeriod||currentPeriod);
 }
 
 export async function refreshPublicSnapshotSafely() {
