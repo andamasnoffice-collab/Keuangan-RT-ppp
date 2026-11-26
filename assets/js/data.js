@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal, calculateAvailableBalance, buildPublicCashFlowSummary } from "./accounting.js?v=20261126-cashflowfix1";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal, calculateAvailableBalance, buildPublicCashFlowSummary } from "./accounting.js?v=20261126-cashflowfix2";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
