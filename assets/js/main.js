@@ -215,86 +215,67 @@ async function renderPublicDashboard(c){
     c.innerHTML=announcementHtml+'<div class="panel"><h3>Dashboard Keuangan Perum Puri Papahan</h3><p class="muted">Ringkasan publik belum dipublikasikan oleh pengurus.</p><p class="tiny muted">Informasi keuangan akan muncul setelah pengurus menerbitkan ringkasan.</p></div>';
     return;
   }
-  const cats=d.categories||{};
-  const fmt=n=>money(n);
-  const cardButton=(id,label,value,sub)=>`<button type="button" class="stat stat-button" data-finance-detail="${id}"><div class="label">${label}</div><div class="value">${fmt(value)}</div><div class="sub">${sub||"Klik untuk rincian bulanan"}</div></button>`;
+  const cats=d.categories||{},labels={kas:"Kas RT",air:"Air",sampah:"Uang Sampah"};
+  const totalBalance=["kas","air","sampah"].reduce((sum,key)=>sum+(Number(cats[key]?.balance)||0),0);
   c.innerHTML=announcementHtml+`
     <div class="grid stats">
       ${card("Rumah terdaftar",Number(d.householdCount)||0,"Jumlah rumah")}
       ${card("Rumah dengan tunggakan",Number(d.outstandingHouseholds)||0,"Seluruh periode")}
-      ${card("Total tunggakan",fmt(d.totalOutstanding),"Akumulasi lintas tahun")}
-      ${card("Saldo operasional total",fmt(["kas","sampah","air"].reduce((s,k)=>s+(Number(cats[k]?.balance)||0),0)),"Seluruh kategori")}
+      ${card("Total tunggakan",money(d.totalOutstanding),"Akumulasi lintas tahun")}
+      ${card("Saldo operasional total",money(totalBalance),"Dana bebas seluruh kategori")}
     </div>
-    <div class="section-head"><h3>Saldo operasional per kategori</h3><span class="pill">Hanya lihat</span></div>
+    <div class="section-head"><div><h3>Mutasi keuangan per kategori</h3><p class="tiny muted">Pilih kategori untuk melihat saldo awal, pemasukan, pengeluaran, dan saldo akhir setiap bulan.</p></div><span class="pill">Hanya lihat</span></div>
     <div class="grid stats">
-      ${cardButton("kas","Saldo Kas RT",cats.kas?.balance,"Klik untuk rincian pemasukan & pengeluaran")}
-      ${cardButton("air","Saldo Air",cats.air?.balance,"Klik untuk rincian pemasukan & pengeluaran")}
-      ${cardButton("sampah","Saldo Sampah",cats.sampah?.balance,"Klik untuk rincian pemasukan & pengeluaran")}
+      ${["kas","air","sampah"].map(cat=>`<button type="button" class="stat stat-button" data-category-mutation="${cat}"><div class="label">Saldo ${labels[cat]}</div><div class="value">${money(cats[cat]?.balance)}</div><div class="sub">Klik untuk melihat mutasi bulanan</div></button>`).join("")}
     </div>
-    <div class="grid stats">
-      ${cardButton("income","Total pemasukan",Object.values(d.financeByMonth||{}).reduce((s,m)=>s+(Number(m.totals?.income)||0),0),"Klik untuk daftar pemasukan per bulan")}
-      ${cardButton("expenses","Total pengeluaran",Object.values(d.financeByMonth||{}).reduce((s,m)=>s+(Number(m.totals?.expenses)||0),0),"Klik untuk daftar pengeluaran per bulan")}
-    </div>
-    <div id="publicFinanceDetail" class="panel" hidden></div>
+    <div id="publicCategoryMutation" class="panel" hidden></div>
     <div class="section-head"><h3>Informasi publik</h3><span class="pill">Transparansi RT</span></div>
-    <div class="muted-note">Warga dapat melihat saldo operasional dan rincian arus kas. Nama warga, nomor telepon, anggota keluarga, bukti pembayaran pribadi, serta deposit per rumah tidak dipublikasikan.</div>
+    <div class="muted-note">Warga dapat melihat saldo operasional dan mutasi per kategori. Nama warga, nomor telepon, anggota keluarga, bukti pembayaran pribadi, serta deposit per rumah tidak dipublikasikan.</div>
     <div class="tiny muted">Pembaruan terakhir: ${d.updatedAt?new Date(d.updatedAt).toLocaleString("id-ID"):"-"}</div>
     <button type="button" class="btn secondary" id="guestViewBills">Lihat daftar tunggakan</button>`;
-  document.querySelectorAll("[data-finance-detail]").forEach(btn=>{
-    btn.addEventListener("click",()=>showPublicFinanceDetail(btn.dataset.financeDetail,d));
+  document.querySelectorAll("[data-category-mutation]").forEach(btn=>{
+    btn.addEventListener("click",()=>showPublicCategoryMutation(btn.dataset.categoryMutation,d));
   });
   $("#guestViewBills").onclick=()=>{page="publicBills";document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.page===page));renderGuestPage();};
 }
 
-function showPublicFinanceDetail(kind, dashboard){
-  const panel=$("#publicFinanceDetail");
+function showPublicCategoryMutation(cat,dashboard){
+  const panel=$("#publicCategoryMutation");
+  if(!panel)return;
+  const labels={kas:"Kas RT",air:"Uang Air",sampah:"Uang Sampah"};
+  const category=dashboard.categories?.[cat]||{};
+  const period=/^\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.period||"")?dashboard.period:monthKey();
+  const year=Number(period.slice(0,4));
+  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.goLivePeriod||"")?dashboard.goLivePeriod:period;
+  const firstPeriod=goLive>`${year}-01`?goLive:`${year}-01`;
+  const firstMonth=Number(firstPeriod.slice(5,7)),lastMonth=Number(period.slice(5,7));
   const months=dashboard.financeByMonth||{};
-  const monthKeys=Object.keys(months).filter(x=>/^\d{4}-\d{2}$/.test(x)).sort().reverse();
-  const years=[...new Set(monthKeys.map(x=>x.slice(0,4)))].sort().reverse();
-  const categoryLabels={kas:"Kas RT",air:"Air",sampah:"Sampah"};
-  const titleText=kind==="income"?"Rincian seluruh pemasukan":kind==="expenses"?"Rincian seluruh pengeluaran":`Rincian keuangan ${categoryLabels[kind]||kind.toUpperCase()}`;
+  const activeKeys=Array.from({length:Math.max(0,lastMonth-firstMonth+1)},(_,i)=>`${year}-${String(firstMonth+i).padStart(2,"0")}`);
+  const values=key=>months[key]?.byCategory?.[cat]||{income:0,expenses:0};
+  const totalIncome=activeKeys.reduce((sum,key)=>sum+Math.max(0,Number(values(key).income)||0),0);
+  const totalExpenses=activeKeys.reduce((sum,key)=>sum+Math.max(0,Number(values(key).expenses)||0),0);
+  const opening=(Number(category.balance)||0)-totalIncome+totalExpenses;
+  let running=opening;
+  const monthNames=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const rows=activeKeys.map(key=>{
+    const data=values(key),income=Math.max(0,Number(data.income)||0),expense=Math.max(0,Number(data.expenses)||0);
+    const start=running,end=start+income-expense;running=end;
+    return `<tr><td><b>${monthNames[Number(key.slice(5,7))-1]}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount"><b>${money(end)}</b></td></tr>`;
+  }).join("");
   panel.hidden=false;
-  panel.innerHTML=`<div class="section-head"><div><h3>${titleText}</h3><p class="tiny muted">Pilih tahun untuk melihat rekap dan rincian per bulan.</p></div><button type="button" class="btn outline" id="closePublicDetail">Tutup</button></div>
-    <label class="field">Pilih tahun<select id="publicFinanceYear">${years.map(y=>`<option value="${y}">${y}</option>`).join("")||'<option value="">Belum ada data</option>'}</select></label>
-    <div id="publicFinanceYearSummary"></div>
-    <div id="publicFinanceMonthRows"></div>
-    <div id="publicFinanceTransactions" class="public-finance-transactions" hidden></div>`;
-  $("#closePublicDetail").onclick=()=>{panel.hidden=true;};
-  const getRows=(period)=>{
-    const bucket=months[period]||{income:[],expenses:[],totals:{}};
-    const income=kind==="expenses"?[]:(bucket.income||[]).filter(x=>!categoryLabels[kind]||x.category===kind);
-    const expenses=kind==="income"?[]:(bucket.expenses||[]).filter(x=>!categoryLabels[kind]||x.category===kind);
-    return {income,expenses};
-  };
-  const sum=rows=>rows.reduce((n,x)=>n+(Number(x.amount)||0),0);
-  const draw=()=>{
-    const year=$("#publicFinanceYear").value;
-    const periods=monthKeys.filter(p=>p.startsWith(year+"-")).sort();
-    let yearIncome=0,yearExpenses=0;
-    const monthly=periods.map(period=>{
-      const rows=getRows(period),income=sum(rows.income),expenses=sum(rows.expenses);
-      yearIncome+=income;yearExpenses+=expenses;
-      return {period,income,expenses,rows};
-    });
-    $("#publicFinanceYearSummary").innerHTML=`<div class="grid stats public-year-stats">${card("Total pemasukan",money(yearIncome),"Tahun "+(year||"-"))}${card("Total pengeluaran",money(yearExpenses),"Tahun "+(year||"-"))}${card("Selisih",money(yearIncome-yearExpenses),"Pemasukan dikurangi pengeluaran")}</div>`;
-    $("#publicFinanceMonthRows").innerHTML=`<div class="section-head"><h4>Rincian per bulan · ${year||"-"}</h4></div><div class="table-wrap"><table><thead><tr><th>Bulan</th><th>Pemasukan</th><th>Pengeluaran</th><th>Selisih</th><th>Rincian</th></tr></thead><tbody>${monthly.map(x=>`<tr><td>${formatPublicMonth(x.period)}</td><td class="amount">${money(x.income)}</td><td class="amount">${money(x.expenses)}</td><td class="amount">${money(x.income-x.expenses)}</td><td><button type="button" class="btn outline btn-sm" data-public-month="${x.period}">Lihat</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada transaksi pada tahun ini.</td></tr>'}</tbody><tfoot><tr><th>Total tahun</th><th class="amount">${money(yearIncome)}</th><th class="amount">${money(yearExpenses)}</th><th class="amount">${money(yearIncome-yearExpenses)}</th><th></th></tr></tfoot></table></div>`;
-    $("#publicFinanceTransactions").hidden=true;
-    $("#publicFinanceTransactions").innerHTML="";
-    $("#publicFinanceMonthRows").querySelectorAll("[data-public-month]").forEach(button=>{
-      button.addEventListener("click",()=>{
-        const period=button.dataset.publicMonth,rows=getRows(period),items=[...rows.income.map(x=>({...x,flow:"Pemasukan"})),...rows.expenses.map(x=>({...x,flow:"Pengeluaran"}))].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
-        const box=$("#publicFinanceTransactions");box.hidden=false;
-        box.innerHTML=`<div class="section-head"><h4>Transaksi ${formatPublicMonth(period)}</h4><span class="pill">${items.length} transaksi</span></div><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>${items.map(x=>`<tr><td>${formatPublicDate(x.date)}</td><td>${x.flow}</td><td>${escapeHtml(x.description||categoryLabels[x.category]||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Tidak ada transaksi.</td></tr>'}</tbody></table></div>`;
-        box.scrollIntoView({behavior:"smooth",block:"nearest"});
-      });
-    });
-  };
-  $("#publicFinanceYear").addEventListener("change",draw);
-  if(years.length)draw();
-  else{
-    $("#publicFinanceYearSummary").innerHTML='<div class="muted-note">Belum ada data pemasukan atau pengeluaran yang dipublikasikan.</div>';
-    $("#publicFinanceMonthRows").innerHTML="";
-  }
+  panel.innerHTML=`
+    <div class="section-head"><div><h3>Mutasi ${labels[cat]} ${year}</h3><p class="tiny muted">Periode aktif: ${firstPeriod} sampai ${period}. Saldo akhir berjalan ke bulan berikutnya.</p></div><button type="button" class="btn outline" id="closePublicCategoryMutation">Tutup</button></div>
+    <div class="grid stats">
+      ${card("Dana bebas saat ini",money(category.balance),"Setelah dikurangi kewajiban")}
+      ${card("Uang kas/bank",money(category.cashBalance??category.balance),"Saldo uang nyata")}
+      ${card("Penerimaan dialokasikan",money(totalIncome),"Periode aktif")}
+      ${card("Pengeluaran tercatat",money(totalExpenses),"Periode aktif")}
+      ${card("Deposit Air",money(category.depositLiability),"Kewajiban deposit warga")}
+      ${card("Uang muka",money(category.advanceLiability),"Kewajiban pembayaran di muka")}
+    </div>
+    <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">Belum ada periode pembukuan aktif pada tahun ini.</td></tr>'}<tr class="ledger-total"><td><b>Akumulasi periode aktif</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIncome)}</td><td class="amount expense-value">${money(totalExpenses)}</td><td class="amount"><b>${money(running)}</b></td></tr></tbody></table></div>
+    <p class="tiny muted ledger-note">Mutasi menggunakan ringkasan bulanan kategori yang sama dengan halaman Kas RT, Uang Air, dan Uang Sampah. Deposit dan uang muka bukan pemasukan baru.</p>`;
+  $("#closePublicCategoryMutation").onclick=()=>{panel.hidden=true;};
 }
 function formatPublicMonth(value){
   if(!/^\d{4}-\d{2}$/.test(String(value||"")))return String(value||"-");
