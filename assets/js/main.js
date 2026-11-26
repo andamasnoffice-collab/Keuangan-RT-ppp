@@ -253,14 +253,14 @@ function showPublicCategoryMutation(cat,dashboard){
   if(!panel)return;
   const labels={kas:"Kas RT",air:"Uang Air",sampah:"Uang Sampah"};
   const category=dashboard.categories?.[cat]||{};
-  const period=/^\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.period||"")?dashboard.period:monthKey();
+  const period=/^\\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.period||"")?dashboard.period:monthKey();
   const year=Number(period.slice(0,4));
-  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.goLivePeriod||"")?dashboard.goLivePeriod:period;
+  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.goLivePeriod||"")?dashboard.goLivePeriod:period;
   const firstPeriod=goLive>`${year}-01`?goLive:`${year}-01`;
   const firstMonth=Number(firstPeriod.slice(5,7)),lastMonth=Number(period.slice(5,7));
   const months=dashboard.financeByMonth||{};
+  const values=key=>months[key]?.byCategory?.[cat]||{income:0,expenses:0,incomeItems:[],expenseItems:[]};
   const activeKeys=Array.from({length:Math.max(0,lastMonth-firstMonth+1)},(_,i)=>`${year}-${String(firstMonth+i).padStart(2,"0")}`);
-  const values=key=>months[key]?.byCategory?.[cat]||{income:0,expenses:0};
   const totalIncome=activeKeys.reduce((sum,key)=>sum+Math.max(0,Number(values(key).income)||0),0);
   const totalExpenses=activeKeys.reduce((sum,key)=>sum+Math.max(0,Number(values(key).expenses)||0),0);
   const opening=(Number(category.balance)||0)-totalIncome+totalExpenses;
@@ -269,7 +269,7 @@ function showPublicCategoryMutation(cat,dashboard){
   const rows=activeKeys.map(key=>{
     const data=values(key),income=Math.max(0,Number(data.income)||0),expense=Math.max(0,Number(data.expenses)||0);
     const start=running,end=start+income-expense;running=end;
-    return `<tr><td><b>${monthNames[Number(key.slice(5,7))-1]}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td class="amount"><b>${money(end)}</b></td></tr>`;
+    return `<tr><td><b>${monthNames[Number(key.slice(5,7))-1]}</b></td><td class="amount">${money(start)}</td><td class="amount income-value">${money(income)}</td><td class="amount expense-value">${money(expense)}</td><td><button type="button" class="btn outline btn-sm" data-category-month-detail="${key}">Lihat rincian</button></td><td class="amount"><b>${money(end)}</b></td></tr>`;
   }).join("");
   panel.hidden=false;
   panel.innerHTML=`
@@ -277,15 +277,24 @@ function showPublicCategoryMutation(cat,dashboard){
     <div class="grid stats">
       ${card("Dana bebas saat ini",money(category.balance),"Setelah dikurangi kewajiban")}
       ${card("Uang kas/bank",money(category.cashBalance??category.balance),"Saldo uang nyata")}
-      ${card("Penerimaan dialokasikan",money(totalIncome),"Periode aktif")}
-      ${card("Pengeluaran tercatat",money(totalExpenses),"Periode aktif")}
+      ${card("Penerimaan dialokasikan",money(totalIncome),"Pembayaran warga yang diakui sebagai pemasukan")}
+      ${card("Pengeluaran tercatat",money(totalExpenses),"Pengeluaran dengan keterangan")}
       ${card("Deposit Air",money(category.depositLiability),"Kewajiban deposit warga")}
       ${card("Uang muka",money(category.advanceLiability),"Kewajiban pembayaran di muka")}
     </div>
-    <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo akhir</th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">Belum ada periode pembukuan aktif pada tahun ini.</td></tr>'}<tr class="ledger-total"><td><b>Akumulasi periode aktif</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIncome)}</td><td class="amount expense-value">${money(totalExpenses)}</td><td class="amount"><b>${money(running)}</b></td></tr></tbody></table></div>
-    <p class="tiny muted ledger-note">Mutasi menggunakan ringkasan bulanan kategori yang sama dengan halaman Kas RT, Uang Air, dan Uang Sampah. Deposit dan uang muka bukan pemasukan baru.</p>`;
+    <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Bulan</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Rincian</th><th>Saldo akhir</th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="empty">Belum ada periode pembukuan aktif pada tahun ini.</td></tr>'}<tr class="ledger-total"><td><b>Akumulasi periode aktif</b></td><td class="amount">${money(opening)}</td><td class="amount income-value">${money(totalIncome)}</td><td class="amount expense-value">${money(totalExpenses)}</td><td></td><td class="amount"><b>${money(running)}</b></td></tr></tbody></table></div>
+    <div id="publicCategoryMonthDetails" class="public-category-month-details" hidden></div>
+    <p class="tiny muted ledger-note">Rincian pemasukan bersumber dari pembayaran warga yang benar-benar dialokasikan ke tagihan. Deposit Air dan pembayaran di muka yang belum diterapkan tidak dihitung sebagai pemasukan baru. Bukti pembayaran pribadi tidak ditampilkan.</p>`;
   $("#closePublicCategoryMutation").onclick=()=>{panel.hidden=true;};
+  panel.querySelectorAll("[data-category-month-detail]").forEach(button=>button.addEventListener("click",()=>{
+    const key=button.dataset.categoryMonthDetail,data=values(key),box=$("#publicCategoryMonthDetails");
+    const renderItems=(title,items,kind)=>`<section class="public-cashflow-group"><h4>${title} <span>${money(items.reduce((sum,x)=>sum+(Number(x.amount)||0),0))}</span></h4>${items.length?items.map(item=>`<div class="public-cashflow-item"><div><b>${escapeHtml(item.description||title)}</b><small>${escapeHtml(formatPublicDate(item.date))}</small></div><strong class="${kind}">${money(item.amount)}</strong></div>`).join(""):'<p class="muted tiny">Belum ada transaksi.</p>'}</section>`;
+    box.hidden=false;
+    box.innerHTML=`<div class="section-head"><h4>Rincian ${monthNames[Number(key.slice(5,7))-1]} ${year}</h4><span class="pill"> ${(data.incomeItems||[]).length+(data.expenseItems||[]).length} transaksi</span></div>${renderItems("Pemasukan · Pembayaran warga",data.incomeItems||[],"income-value")}${renderItems("Pengeluaran",data.expenseItems||[],"expense-value")}`;
+    box.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }));
 }
+
 function formatPublicMonth(value){
   if(!/^\d{4}-\d{2}$/.test(String(value||"")))return String(value||"-");
   const [year,month]=value.split("-").map(Number);
