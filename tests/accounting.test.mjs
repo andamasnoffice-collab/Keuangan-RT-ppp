@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance,paymentRecognizedCash,buildWaiverJournal,calculateAvailableBalance,buildAdvanceApplicationJournal} from "../assets/js/accounting.js";
+import {buildInvoiceJournal,buildPaymentJournal,buildExpenseJournal,buildOpeningJournal,summarizeLedger,cashFlow,trialBalance,paymentRecognizedCash,buildWaiverJournal,calculateAvailableBalance,buildAdvanceApplicationJournal,buildPublicCashFlowSummary} from "../assets/js/accounting.js";
 const period="2026-11",date="2026-11-20";
 test("invoice accrual records receivable and revenue, not cash",()=>{
  const j=buildInvoiceJournal({id:"inv1",period,date,householdId:"h1",category:"kas",amount:100000});
@@ -78,4 +78,20 @@ test("deposit is restricted to water and advance is restricted to fixed dues",()
  assert.throws(()=>buildPaymentJournal({id:"bad-deposit",period,date,householdId:"h1",items:[{cat:"kas",cash:0,depositUsed:1000,applied:1000,surplus:0}]}),/Deposit hanya diperbolehkan/);
  assert.throws(()=>buildPaymentJournal({id:"bad-air-advance",period,date,householdId:"h1",items:[{cat:"air",cash:1000,applied:1000,advance:true}]}),/Pembayaran di muka hanya berlaku/);
  assert.throws(()=>buildAdvanceApplicationJournal({id:"bad-advance",period,date,householdId:"h1",category:"air",amount:1000}),/Uang muka hanya berlaku/);
+});
+
+test("public cash flow uses actual transaction records and excludes deposit-only applications",()=>{
+ const projection=buildPublicCashFlowSummary({
+  "2026-11":{
+   kas:{type:"payment",category:"kas",amount:100000,date:"2026-11-01",description:"Pelunasan Kas RT"},
+   air:{type:"payment",category:"air",amount:75000,date:"2026-11-02",description:"Penerimaan kas Air"},
+   sampah:{type:"payment",category:"sampah",amount:50000,date:"2026-11-03",description:"Pelunasan Sampah"},
+   deposit:{type:"payment",category:"air",amount:25000,date:"2026-11-04",description:"Pelunasan otomatis dari deposit air"},
+   expense:{type:"expense",category:"sampah",amount:30000,date:"2026-11-05",description:"Pembelian alat kebersihan"}
+  }
+ });
+ assert.equal(projection["2026-11"].income,225000);
+ assert.equal(projection["2026-11"].expenses,30000);
+ assert.equal(Object.keys(projection["2026-11"].incomeItems).length,3);
+ assert.equal(Object.keys(projection["2026-11"].expenseItems).length,1);
 });
