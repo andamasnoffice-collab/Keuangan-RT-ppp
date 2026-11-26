@@ -727,8 +727,8 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
   const publicCategoryLabel=category=>({kas:"Kas RT",air:"Air",sampah:"Sampah"})[category]||"Lainnya";
   const financeByMonth={};
   for(const [period,summary] of Object.entries(financeSummaryByMonth||{})){
-    const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:"Pemasukan "+publicCategoryLabel(x.category)}));
-    const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:"Pengeluaran "+publicCategoryLabel(x.category)}));
+    const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:String(x.description||("Pemasukan "+publicCategoryLabel(x.category))).slice(0,120)}));
+    const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:String(x.description||("Pengeluaran "+publicCategoryLabel(x.category))).slice(0,120)}));
     financeByMonth[period]={
       income:incomeItems,
       expenses:expenseItems,
@@ -797,7 +797,7 @@ export async function buildAnnualSummary(year, recordedBy=null) {
 
 export async function refreshPublicSnapshot(currentPeriod, householdsOverride=null) {
   if(!validPeriod(currentPeriod)) throw new Error("Periode publik tidak valid.");
-  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances,paymentsByMonth,expensesByMonth]=await Promise.all([
+  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances,transactionsByMonth,paymentsByMonth,expensesByMonth]=await Promise.all([
     householdsOverride||getHouseholds(),
     read("category_balances"),
     read("financeSummaryByMonth"),
@@ -805,37 +805,51 @@ export async function refreshPublicSnapshot(currentPeriod, householdsOverride=nu
     read("arrearsLedger"),
     read("deposits"),
     read("fixed_advance_payments"),
+    read("transactionsByMonth"),
     read("paymentsByMonth"),
     read("expensesByMonth")
   ]);
-  // Rebuild public cash-flow rows from the actual receipt/expense records.
-  // This repairs older payments that were saved before monthly summaries were synced.
+  // Use the unified transaction ledger as the source of actual cash movements.
   const publicFinanceSummary={...(financeSummary||{})};
-  for(const [period,records] of Object.entries(paymentsByMonth||{})){
+  const transactionPeriods=new Set();
+  for(const [period,records] of Object.entries(transactionsByMonth||{})){
     if(!validPeriod(period)||!records||!Object.keys(records).length)continue;
-    const incomeItems={};
-    let income=0;
+    transactionPeriods.add(period);
+    const incomeItems={},expenseItems={};let income=0,expenses=0;
+    for(const [id,row] of Object.entries(records)){
+      const category=row?.category,amount=Math.max(0,Number(row?.amount)||0);
+      if(!["kas","air","sampah"].includes(category)||amount<=0)continue;
+      const type=String(row?.type||"").toLowerCase();
+      const description=String(row?.description||"").slice(0,120);
+      const depositApplication=/deposit/i.test(description)||type==="deposit_application"||type==="automatic_deposit_application";
+      if(type==="expense"||type==="pengeluaran"){
+        expenseItems[id]={date:row.date||null,category,amount,description:description||"Pengeluaran"};expenses+=amount;
+      }else if((type==="payment"||type==="income"||type==="pemasukan")&&!depositApplication){
+        incomeItems[id]={date:row.date||null,category,amount,description:description||"Penerimaan pembayaran warga"};income+=amount;
+      }
+    }
+    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),income,expenses,incomeItems,expenseItems};
+  }
+  // Fallback only for legacy periods without unified transaction records.
+  for(const [period,records] of Object.entries(paymentsByMonth||{})){
+    if(!validPeriod(period)||transactionPeriods.has(period)||!records)continue;
+    const incomeItems={};let income=0;
     for(const [paymentId,payment] of Object.entries(records)){
       for(const [index,item] of (payment?.items||[]).entries()){
-        const category=item?.category||item?.cat;
-        const cash=Math.max(0,Number(item?.cash)||0);
+        const category=item?.category||item?.cat,cash=Math.max(0,Number(item?.cash)||0);
         if(!["kas","air","sampah"].includes(category)||cash<=0)continue;
-        const id="receipt_"+paymentId+"_"+category+"_"+index;
-        incomeItems[id]={date:payment.date||null,category,amount:cash,description:"Penerimaan pembayaran warga · "+({kas:"Kas RT",air:"Air",sampah:"Sampah"}[category])};
-        income+=cash;
+        incomeItems["receipt_"+paymentId+"_"+category+"_"+index]={date:payment.date||null,category,amount:cash,description:"Penerimaan pembayaran warga"};income+=cash;
       }
     }
     publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),income,incomeItems};
   }
   for(const [period,records] of Object.entries(expensesByMonth||{})){
-    if(!validPeriod(period)||!records||!Object.keys(records).length)continue;
-    const expenseItems={};
-    let expenses=0;
-    for(const [expenseId,expense] of Object.entries(records)){
-      const category=expense?.category,amount=Math.max(0,Number(expense?.amount)||0);
+    if(!validPeriod(period)||transactionPeriods.has(period)||!records)continue;
+    const expenseItems={};let expenses=0;
+    for(const [id,row] of Object.entries(records)){
+      const category=row?.category,amount=Math.max(0,Number(row?.amount)||0);
       if(!["kas","air","sampah"].includes(category)||amount<=0)continue;
-      expenseItems[expenseId]={date:expense.date||null,category,amount,description:String(expense.description||"Pengeluaran").slice(0,120)};
-      expenses+=amount;
+      expenseItems[id]={date:row.date||null,category,amount,description:String(row.description||"Pengeluaran").slice(0,120)};expenses+=amount;
     }
     publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),expenses,expenseItems};
   }
