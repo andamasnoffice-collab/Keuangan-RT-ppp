@@ -788,7 +788,7 @@ async function renderCategory(c,cat){
   c.innerHTML=stats+ledger+`<div class="muted-note">${labels[cat]}: mutasi menampilkan transaksi yang sudah masuk ke ringkasan keuangan bulanan. Deposit dan uang muka ditampilkan sebagai kewajiban, bukan pemasukan.${cat==="air"?' Pencatatan angka meter bulanan tersedia di tab Meteran Air.':''}</div>`;
 }
 async function renderExpenses(c){
-  const current=monthKey(),position=await getFinancialPosition();
+  const current=monthKey(); let position=await getFinancialPosition();
   const categoryNames={kas:"Kas RT",air:"Kas Air",sampah:"Kas Sampah"};
   const moneyLine=cat=>`<div class="expense-position-grid"><div><small>Uang kas/bank</small><b>${money(position[cat].cashBalance)}</b></div><div><small>Deposit warga</small><b>${money(position[cat].depositLiability)}</b></div><div><small>Uang muka</small><b>${money(position[cat].advanceLiability)}</b></div><div class="expense-available"><small>Dana bebas</small><b>${money(position[cat].availableBalance)}</b></div></div>`;
   c.innerHTML=`<div class="panel expense-entry-panel">
@@ -805,7 +805,10 @@ async function renderExpenses(c){
   bindRupiahInputs($("#expenseForm"));
   const categorySelect=$("#expenseForm").elements.category;
   $("#expensePosition").innerHTML=moneyLine(categorySelect.value);
-  categorySelect.addEventListener("change",()=>{$("#expensePosition").innerHTML=moneyLine(categorySelect.value);});
+  categorySelect.addEventListener("change",async()=>{
+    try{position=await getFinancialPosition();$("#expensePosition").innerHTML=moneyLine(categorySelect.value);}
+    catch(error){toast("Gagal memperbarui saldo kategori: "+error.message);}
+  });
   const drawHistory=async()=>{
     const period=$("#expensePeriod").value||current;
     const rows=Object.values(await getExpenses(period)||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
@@ -817,7 +820,13 @@ async function renderExpenses(c){
     e.preventDefault();const f=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type="submit"]');
     button.disabled=true;button.textContent="Menyimpan…";
     try{
-      const saved=await createExpense({category:f.get("category"),amount:parseRupiah(f.get("amount")),date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
+      position=await getFinancialPosition();
+      $("#expensePosition").innerHTML=moneyLine(categorySelect.value);
+      const requestedAmount=parseRupiah(f.get("amount"));
+      if(requestedAmount>Number(position[categorySelect.value]?.availableBalance||0)){
+        throw new Error("Dana bebas terbaru untuk "+(categoryNames[categorySelect.value]||categorySelect.value)+" hanya "+money(position[categorySelect.value]?.availableBalance||0)+". Saldo pada formulir sudah diperbarui; sesuaikan nominal pengeluaran.");
+      }
+      const saved=await createExpense({category:f.get("category"),amount:requestedAmount,date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
       toast(saved.summarySyncPending?"Pengeluaran tersimpan, tetapi ringkasan bulanan perlu diperiksa. Jangan catat ulang.":"Pengeluaran berhasil disimpan.");
       e.currentTarget.reset();e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10);$("#expensePeriod").value=String(f.get("date")).slice(0,7);
       const latest=await getFinancialPosition();for(const cat of ["kas","air","sampah"])position[cat]=latest[cat];
