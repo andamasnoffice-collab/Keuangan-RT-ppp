@@ -5,7 +5,7 @@ import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, 
 import { renderPaymentPage } from "./payments.js?v=20261126-cashflow3";
 import { renderWhatsAppPage } from "./whatsapp.js?v=20261126-arrears1";
 import { renderOpeningMigration } from "./migration.js?v=20261126-arrears1";
-import { cashFlow, trialBalance, summarizeLedger } from "./accounting.js?v=20261126-cashflowfix1";
+import { cashFlow, trialBalance, summarizeLedger } from "./accounting.js?v=20261126-cashflowfix2";
 
 const $ = s => document.querySelector(s);
 const money = n => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Number(n)||0);
