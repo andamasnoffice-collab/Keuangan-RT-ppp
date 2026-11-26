@@ -703,3 +703,15 @@ button,a,input,select,textarea{touch-action:manipulation}
  .mobile-action-dock{position:sticky;left:auto;right:auto;bottom:auto;margin:8px}
  .content{padding-bottom:18px}
 }
+
+/* Public category cashflow details */
+.public-category-month-details{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.public-cashflow-group{margin:12px 0}
+.public-cashflow-group h4{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 8px;font-size:14px}
+.public-cashflow-item{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+.public-cashflow-item:last-child{border-bottom:0}
+.public-cashflow-item>div{min-width:0;display:grid;gap:4px}
+.public-cashflow-item b{font-size:13px;overflow-wrap:anywhere}
+.public-cashflow-item small{font-size:12px;color:var(--muted)}
+.public-cashflow-item strong{font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(max-width:700px){.public-category-month-details{padding:11px}.public-cashflow-item{gap:8px}.public-cashflow-item strong{font-size:13px}}
