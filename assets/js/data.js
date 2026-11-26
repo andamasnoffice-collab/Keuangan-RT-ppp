@@ -342,9 +342,11 @@ export async function createMonthlyBills(period, recordedBy) {
         const invoice=buildInvoiceJournal({id:"invoice_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:cat==="air"?Math.max(0,row.air.amount-Number(row.air.openingArrears||0)):row[cat].amount,createdAt:now});
         if(invoice)updates[`journal_entries/${invoice.id}`]=invoice;
         const advanceAmount=cat==="kas"?kasAdvance:cat==="sampah"?sampahAdvance:0;
-        const advanceJournal=buildAdvanceApplicationJournal({id:"advance_apply_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:advanceAmount,createdAt:now});
-        if(advanceJournal)updates["journal_entries/"+advanceJournal.id]=advanceJournal;
-        if(advanceAmount>0)summaryDeltas.push({id:"advance_apply_"+period+"_"+id+"_"+cat,category:cat,amount:advanceAmount,description:"Penerapan pembayaran di muka "+cat});
+        if(advanceAmount>0){
+          const advanceJournal=buildAdvanceApplicationJournal({id:"advance_apply_"+period+"_"+id+"_"+cat,period,date:period+"-01",householdId:id,category:cat,amount:advanceAmount,createdAt:now});
+          if(advanceJournal)updates["journal_entries/"+advanceJournal.id]=advanceJournal;
+          summaryDeltas.push({id:"advance_apply_"+period+"_"+id+"_"+cat,category:cat,amount:advanceAmount,description:"Penerapan pembayaran di muka "+cat});
+        }
       }
       if(Object.keys(applied).length){
         const paymentRef=push(root(`paymentsByMonth/${period}`));
