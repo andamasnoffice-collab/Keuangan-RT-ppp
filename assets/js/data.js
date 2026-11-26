@@ -317,7 +317,7 @@ export async function createMonthlyBills(period, recordedBy) {
         sampah:{amount:sampahBillAmount,paidAmount:sampahAdvance,remaining:Math.max(0,sampahBillAmount-sampahAdvance),status:sampahBillAmount===0||sampahAdvance>=sampahBillAmount?"paid":sampahAdvance>0?"partial":"unpaid",...(sampahAdvance?{advancePaymentId:fixedAdvance.sampah.paymentId,advancePaidAt:fixedAdvance.sampah.paidAt,rateLocked:sampahBillAmount}:{}),createdAt:now},
         air:{amount:raw.air,adminAmount:raw.air,usage:0,usageAmount:0,previousMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,currentMeter:Number(h.currentWaterMeter??h.initialWaterMeter)||0,paidAmount:0,remaining:raw.air,status:raw.air>0?"unpaid":"paid",createdAt:now}
       };
-      if(applyAirOpening){row.air.amount+=airOpening;row.air.remaining+=airOpening;row.air.openingArrears=airOpening;row.air.status="unpaid";updates["arrearsLedger/"+id+"/"+goLivePeriod+"/air"]=airOpening;updates["households/"+id+"/openingAirArrearsRecorded"]=true;}
+      if(applyAirOpening){row.air.amount+=airOpening;row.air.remaining+=airOpening;row.air.openingArrears=airOpening;row.air.status="unpaid";updates["households/"+id+"/openingAirArrearsRecorded"]=true;}
       if(applyAirOpening){
         const openingJournal=buildOpeningJournal({id:"opening_arrears_"+id+"_"+goLivePeriod+"_air",period:goLivePeriod,date:goLivePeriod+"-01",cash:{},receivables:{air:airOpening},deposits:{},createdAt:now});
         if(openingJournal)updates["journal_entries/"+openingJournal.id]=openingJournal;
