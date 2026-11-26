@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261126-cashflow-detail3";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261126-publiccashflow4";
 import { renderPaymentPage } from "./payments.js?v=20261126-cashflow3";
 import { renderWhatsAppPage } from "./whatsapp.js?v=20261126-arrears1";
 import { renderOpeningMigration } from "./migration.js?v=20261126-arrears1";
