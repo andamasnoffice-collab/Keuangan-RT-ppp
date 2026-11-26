@@ -128,7 +128,7 @@ export function summarizeLedger(entries){
 export function buildPublicCashFlowSummary(transactionsByMonth={}) {
   const result={};
   for(const [period,records] of Object.entries(transactionsByMonth||{})){
-    if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(period)||!records||!Object.keys(records).length)continue;
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)||!records||!Object.keys(records).length)continue;
     const incomeItems={},expenseItems={};let income=0,expenses=0;
     for(const [id,row] of Object.entries(records)){
       const category=row?.category,amount=Math.max(0,Number(row?.amount)||0);
