@@ -640,10 +640,12 @@ export async function createExpense({category, amount, date, description, proof,
   if(!validPeriod(period)) throw new Error("Tanggal pengeluaran tidak valid.");
   const expenseRef = push(root(`expensesByMonth/${period}`));
   const txRef = push(root(`transactionsByMonth/${period}`));
-  const position=await calculateFinancialPosition();
-  const balanceSnap=await get(root(`category_balances/${category}`));
-  const balance=balanceSnap.exists()?balanceSnap.val():{};
-  const currentBalance=Number(balance.balance)||0;
+  const [balances,deposits,advances]=await Promise.all([
+    read("category_balances"),read("deposits"),read("fixed_advance_payments")
+  ]);
+  const position=await calculateFinancialPosition({balances,deposits,advances});
+  const balance=balances?.[category]||{};
+  const currentBalance=Number(position[category]?.cashBalance)||0;
   const availableBalance=Number(position[category]?.availableBalance)||0;
   if(availableBalance<value) throw new Error(`Dana bebas ${"Rp "+new Intl.NumberFormat("id-ID").format(availableBalance)} tidak mencukupi. Saldo kas ${"Rp "+new Intl.NumberFormat("id-ID").format(currentBalance)}, deposit warga ${"Rp "+new Intl.NumberFormat("id-ID").format(position[category]?.depositLiability||0)}, dan uang muka ${"Rp "+new Intl.NumberFormat("id-ID").format(position[category]?.advanceLiability||0)}.`);
   const timestamp = Date.now();
@@ -795,21 +797,54 @@ export async function buildAnnualSummary(year, recordedBy=null) {
 
 export async function refreshPublicSnapshot(currentPeriod, householdsOverride=null) {
   if(!validPeriod(currentPeriod)) throw new Error("Periode publik tidak valid.");
-  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances]=await Promise.all([
+  const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances,paymentsByMonth,expensesByMonth]=await Promise.all([
     householdsOverride||getHouseholds(),
     read("category_balances"),
     read("financeSummaryByMonth"),
     read("arrearsSummary"),
     read("arrearsLedger"),
     read("deposits"),
-    read("fixed_advance_payments")
+    read("fixed_advance_payments"),
+    read("paymentsByMonth"),
+    read("expensesByMonth")
   ]);
+  // Rebuild public cash-flow rows from the actual receipt/expense records.
+  // This repairs older payments that were saved before monthly summaries were synced.
+  const publicFinanceSummary={...(financeSummary||{})};
+  for(const [period,records] of Object.entries(paymentsByMonth||{})){
+    if(!validPeriod(period)||!records||!Object.keys(records).length)continue;
+    const incomeItems={};
+    let income=0;
+    for(const [paymentId,payment] of Object.entries(records)){
+      for(const [index,item] of (payment?.items||[]).entries()){
+        const category=item?.category||item?.cat;
+        const cash=Math.max(0,Number(item?.cash)||0);
+        if(!["kas","air","sampah"].includes(category)||cash<=0)continue;
+        const id="receipt_"+paymentId+"_"+category+"_"+index;
+        incomeItems[id]={date:payment.date||null,category,amount:cash,description:"Penerimaan pembayaran warga · "+({kas:"Kas RT",air:"Air",sampah:"Sampah"}[category])};
+        income+=cash;
+      }
+    }
+    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),income,incomeItems};
+  }
+  for(const [period,records] of Object.entries(expensesByMonth||{})){
+    if(!validPeriod(period)||!records||!Object.keys(records).length)continue;
+    const expenseItems={};
+    let expenses=0;
+    for(const [expenseId,expense] of Object.entries(records)){
+      const category=expense?.category,amount=Math.max(0,Number(expense?.amount)||0);
+      if(!["kas","air","sampah"].includes(category)||amount<=0)continue;
+      expenseItems[expenseId]={date:expense.date||null,category,amount,description:String(expense.description||"Pengeluaran").slice(0,120)};
+      expenses+=amount;
+    }
+    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),expenses,expenseItems};
+  }
   const position=await calculateFinancialPosition({balances,deposits,advances});
   const publicBalances={...(balances||{})};
   for(const category of ["kas","air","sampah"]){
     publicBalances[category]={...(balances?.[category]||{}),balance:position[category].availableBalance,cashBalance:position[category].cashBalance,depositLiability:position[category].depositLiability,advanceLiability:position[category].advanceLiability};
   }
-  return await publishPublicSnapshot(currentPeriod,homes||{},publicBalances,financeSummary||{},arrearsSummary||{},arrearsLedger||{});
+  return await publishPublicSnapshot(currentPeriod,homes||{},publicBalances,publicFinanceSummary,arrearsSummary||{},arrearsLedger||{});
 }
 
 export async function refreshPublicSnapshotSafely() {
