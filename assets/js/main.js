@@ -253,9 +253,9 @@ function showPublicCategoryMutation(cat,dashboard){
   if(!panel)return;
   const labels={kas:"Kas RT",air:"Uang Air",sampah:"Uang Sampah"};
   const category=dashboard.categories?.[cat]||{};
-  const period=/^\\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.period||"")?dashboard.period:monthKey();
+  const period=/^\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.period||"")?dashboard.period:monthKey();
   const year=Number(period.slice(0,4));
-  const goLive=/^\\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.goLivePeriod||"")?dashboard.goLivePeriod:period;
+  const goLive=/^\d{4}-(0[1-9]|1[0-2])$/.test(dashboard.goLivePeriod||"")?dashboard.goLivePeriod:period;
   const firstPeriod=goLive>`${year}-01`?goLive:`${year}-01`;
   const firstMonth=Number(firstPeriod.slice(5,7)),lastMonth=Number(period.slice(5,7));
   const months=dashboard.financeByMonth||{};
