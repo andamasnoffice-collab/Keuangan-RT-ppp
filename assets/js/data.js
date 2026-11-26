@@ -727,8 +727,8 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
   const publicCategoryLabel=category=>({kas:"Kas RT",air:"Air",sampah:"Sampah"})[category]||"Lainnya";
   const financeByMonth={};
   for(const [period,summary] of Object.entries(financeSummaryByMonth||{})){
-    const incomeItems=Object.values(summary?.incomeItems||{}).map(x=>({...x,description:String(x.description||("Pemasukan "+publicCategoryLabel(x.category))).slice(0,120)}));
-    const expenseItems=Object.values(summary?.expenseItems||{}).map(x=>({...x,description:String(x.description||("Pengeluaran "+publicCategoryLabel(x.category))).slice(0,120)}));
+    const incomeItems=Object.values(summary?.byCategory||{}).flatMap(x=>x.incomeItems||[]).map(x=>({...x,description:String(x.description||("Pemasukan "+publicCategoryLabel(x.category))).slice(0,120)}));
+    const expenseItems=Object.values(summary?.byCategory||{}).flatMap(x=>x.expenseItems||[]).map(x=>({...x,description:String(x.description||("Pengeluaran "+publicCategoryLabel(x.category))).slice(0,120)}));
     const byCategory={};
     for(const category of ["kas","air","sampah"]){
       const saved=summary?.byCategory?.[category]||{};
