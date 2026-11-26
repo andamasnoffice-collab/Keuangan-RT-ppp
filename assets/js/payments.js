@@ -1,7 +1,7 @@
 import { ref, push } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { buildPaymentJournal, paymentRecognizedCash } from "./accounting.js?v=20261126-cashflowfix2";
 import { db } from "./firebase.js";
-import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261126-cashflow2";
+import { applyMonthlySummaryDelta, setHouseholdArrearPeriod, writeAndVerify, getHouseholdArrearLedger, getBillingSettings, read, refreshPublicSnapshotSafely } from "./data.js?v=20261126-cashflow-detail1";
 
 const categories=["kas","air","sampah"];
 const fixedCategories=["kas","sampah"];
