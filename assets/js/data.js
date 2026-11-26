@@ -722,7 +722,7 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
   const categoryTotals={};
   for(const category of ["kas","sampah","air"]){
     const b=balances?.[category]||{};
-    categoryTotals[category]={balance:Number(b.balance)||0,income:Number(b.income)||0,expense:Number(b.expense)||0};
+    categoryTotals[category]={balance:Number(b.balance)||0,income:Number(b.income)||0,expense:Number(b.expense)||0,cashBalance:Number(b.cashBalance??b.balance)||0,depositLiability:Number(b.depositLiability)||0,advanceLiability:Number(b.advanceLiability)||0};
   }
   const publicCategoryLabel=category=>({kas:"Kas RT",air:"Air",sampah:"Sampah"})[category]||"Lainnya";
   const financeByMonth={};
