@@ -736,7 +736,9 @@ export async function publishPublicSnapshot(currentPeriod, households, balances,
       const categoryExpenses=expenseItems.filter(x=>x.category===category).reduce((sum,x)=>sum+(Number(x.amount)||0),0);
       byCategory[category]={
         income:Number(saved.income??categoryIncome)||0,
-        expenses:Number(saved.expenses??categoryExpenses)||0
+        expenses:Number(saved.expenses??categoryExpenses)||0,
+        incomeItems:(saved.incomeItems||[]).map(x=>({date:x.date||null,amount:Number(x.amount)||0,description:String(x.description||("Pemasukan "+publicCategoryLabel(category))).slice(0,120)})),
+        expenseItems:(saved.expenseItems||[]).map(x=>({date:x.date||null,amount:Number(x.amount)||0,description:String(x.description||("Pengeluaran "+publicCategoryLabel(category))).slice(0,120)}))
       };
     }
     financeByMonth[period]={
@@ -806,6 +808,74 @@ export async function buildAnnualSummary(year, recordedBy=null) {
   return payload;
 }
 
+function buildPublicFinanceProjection({financeSummary={},paymentsByMonth={},expensesByMonth={},transactionsByMonth={}}){
+  const periods=new Set([...Object.keys(financeSummary||{}),...Object.keys(paymentsByMonth||{}),...Object.keys(expensesByMonth||{}),...Object.keys(transactionsByMonth||{})]);
+  const labels={kas:"Kas RT",air:"Air",sampah:"Sampah"},result={};
+  const n=value=>Math.max(0,Number(value)||0);
+  for(const period of periods){
+    if(!validPeriod(period))continue;
+    const saved=financeSummary?.[period]||{};
+    const byCategory={};
+    for(const cat of ["kas","air","sampah"])byCategory[cat]={income:0,expenses:0,incomeItems:[],expenseItems:[]};
+    const paymentRows=Object.entries(paymentsByMonth?.[period]||{});
+    const expenseRows=Object.entries(expensesByMonth?.[period]||{});
+    for(const [paymentId,payment] of paymentRows){
+      for(const [index,item] of (payment?.items||[]).entries()){
+        const cat=item?.category||item?.cat;
+        if(!byCategory[cat]||item?.advance)continue;
+        const cash=n(item.cash);
+        const recognized=cat==="air"
+          ?(item.cashApplied===undefined?Math.max(0,cash-n(item.surplus)):n(item.cashApplied))
+          :cash;
+        if(!recognized)continue;
+        const billPeriod=validPeriod(item.period)?item.period:period;
+        const billMonth=new Date(Number(billPeriod.slice(0,4)),Number(billPeriod.slice(5,7))-1,1).toLocaleDateString("id-ID",{month:"long",year:"numeric"});
+        const row={id:paymentId+"_"+index,date:payment.date||null,category:cat,amount:recognized,description:"Pembayaran warga · "+labels[cat]+" (tagihan "+billMonth+")"};
+        byCategory[cat].incomeItems.push(row);
+        byCategory[cat].income+=recognized;
+      }
+    }
+    // Advance payments become recognized only when they are applied to a bill.
+    for(const [id,row] of Object.entries(saved.incomeItems||{})){
+      if(!/penerapan pembayaran di muka/i.test(String(row?.description||"")))continue;
+      const cat=row.category;if(!byCategory[cat]||byCategory[cat].incomeItems.some(x=>x.id===id))continue;
+      const item={id,date:row.date||null,category:cat,amount:n(row.amount),description:String(row.description).slice(0,120)};
+      if(item.amount){byCategory[cat].incomeItems.push(item);byCategory[cat].income+=item.amount;}
+    }
+    for(const [id,row] of expenseRows){
+      const cat=row?.category,amount=n(row?.amount);
+      if(!byCategory[cat]||!amount)continue;
+      const item={id,date:row.date||null,category:cat,amount,description:String(row.description||("Pengeluaran "+labels[cat])).slice(0,120)};
+      byCategory[cat].expenseItems.push(item);byCategory[cat].expenses+=amount;
+    }
+    // Compatibility fallback for old records that predate paymentsByMonth/expensesByMonth.
+    if(!paymentRows.length){
+      for(const [id,row] of Object.entries(transactionsByMonth?.[period]||{})){
+        const cat=row?.category,amount=n(row?.amount),type=String(row?.type||"").toLowerCase(),desc=String(row?.description||"");
+        if(!byCategory[cat]||!amount||!/^(payment|income|pemasukan)$/.test(type)||/deposit/i.test(desc))continue;
+        byCategory[cat].incomeItems.push({id,date:row.date||null,category:cat,amount,description:desc.slice(0,120)||("Pembayaran warga · "+labels[cat])});
+        byCategory[cat].income+=amount;
+      }
+    }
+    if(!expenseRows.length){
+      for(const [id,row] of Object.entries(transactionsByMonth?.[period]||{})){
+        const cat=row?.category,amount=n(row?.amount),type=String(row?.type||"").toLowerCase();
+        if(!byCategory[cat]||!amount||!["expense","pengeluaran"].includes(type))continue;
+        const item={id,date:row.date||null,category:cat,amount,description:String(row.description||("Pengeluaran "+labels[cat])).slice(0,120)};
+        byCategory[cat].expenseItems.push(item);byCategory[cat].expenses+=amount;
+      }
+    }
+    for(const cat of ["kas","air","sampah"]){
+      byCategory[cat].incomeItems.sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+      byCategory[cat].expenseItems.sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+    }
+    const income=Object.values(byCategory).flatMap(x=>x.incomeItems);
+    const expenses=Object.values(byCategory).flatMap(x=>x.expenseItems);
+    result[period]={byCategory,income,expenses,totals:{income:income.reduce((sum,x)=>sum+x.amount,0),expenses:expenses.reduce((sum,x)=>sum+x.amount,0)}};
+  }
+  return result;
+}
+
 export async function refreshPublicSnapshot(currentPeriod, householdsOverride=null) {
   if(!validPeriod(currentPeriod)) throw new Error("Periode publik tidak valid.");
   const [homes,balances,financeSummary,arrearsSummary,arrearsLedger,deposits,advances,transactionsByMonth,paymentsByMonth,expensesByMonth,billingSettings]=await Promise.all([
@@ -821,39 +891,9 @@ export async function refreshPublicSnapshot(currentPeriod, householdsOverride=nu
     read("expensesByMonth"),
     getBillingSettings()
   ]);
-  // Use the unified transaction ledger as the source of actual cash movements.
-  const publicFinanceSummary={...(financeSummary||{})};
-  const transactionSummary=buildPublicCashFlowSummary(transactionsByMonth||{});
-  const transactionPeriods=new Set(Object.keys(transactionSummary));
-  for(const [period,summary] of Object.entries(transactionSummary)){
-    // Never replace the category totals used by the category mutation pages.
-    if(!publicFinanceSummary[period]?.byCategory){
-      publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),...summary};
-    }
-  }
-  // Fallback only for legacy periods without unified transaction records.
-  for(const [period,records] of Object.entries(paymentsByMonth||{})){
-    if(!validPeriod(period)||transactionPeriods.has(period)||!records)continue;
-    const incomeItems={};let income=0;
-    for(const [paymentId,payment] of Object.entries(records)){
-      for(const [index,item] of (payment?.items||[]).entries()){
-        const category=item?.category||item?.cat,cash=Math.max(0,Number(item?.cash)||0);
-        if(!["kas","air","sampah"].includes(category)||cash<=0)continue;
-        incomeItems["receipt_"+paymentId+"_"+category+"_"+index]={date:payment.date||null,category,amount:cash,description:"Penerimaan pembayaran warga"};income+=cash;
-      }
-    }
-    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),income,incomeItems};
-  }
-  for(const [period,records] of Object.entries(expensesByMonth||{})){
-    if(!validPeriod(period)||transactionPeriods.has(period)||!records)continue;
-    const expenseItems={};let expenses=0;
-    for(const [id,row] of Object.entries(records)){
-      const category=row?.category,amount=Math.max(0,Number(row?.amount)||0);
-      if(!["kas","air","sampah"].includes(category)||amount<=0)continue;
-      expenseItems[id]={date:row.date||null,category,amount,description:String(row.description||"Pengeluaran").slice(0,120)};expenses+=amount;
-    }
-    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),expenses,expenseItems};
-  }
+  // Build public monthly income/expense details from actual payment and expense records.
+  // Do not let a partial transaction-ledger month suppress the authoritative payment/expense records.
+  const publicFinanceSummary=buildPublicFinanceProjection({financeSummary,paymentsByMonth,expensesByMonth,transactionsByMonth});
   const position=await calculateFinancialPosition({balances,deposits,advances});
   const publicBalances={...(balances||{})};
   for(const category of ["kas","air","sampah"]){
