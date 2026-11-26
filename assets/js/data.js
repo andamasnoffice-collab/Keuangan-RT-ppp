@@ -1,6 +1,6 @@
 import { ref, get, onValue, push, set, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { db } from "./firebase.js";
-import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal, calculateAvailableBalance } from "./accounting.js";
+import { buildExpenseJournal, buildInvoiceJournal, buildPaymentJournal, buildOpeningJournal, buildInvoiceAdjustmentJournal, buildAdvanceApplicationJournal, buildWaiverJournal, calculateAvailableBalance, buildPublicCashFlowSummary } from "./accounting.js";
 
 const root = (path) => ref(db, path);
 async function retryIdempotent(operation) {
@@ -811,24 +811,10 @@ export async function refreshPublicSnapshot(currentPeriod, householdsOverride=nu
   ]);
   // Use the unified transaction ledger as the source of actual cash movements.
   const publicFinanceSummary={...(financeSummary||{})};
-  const transactionPeriods=new Set();
-  for(const [period,records] of Object.entries(transactionsByMonth||{})){
-    if(!validPeriod(period)||!records||!Object.keys(records).length)continue;
-    transactionPeriods.add(period);
-    const incomeItems={},expenseItems={};let income=0,expenses=0;
-    for(const [id,row] of Object.entries(records)){
-      const category=row?.category,amount=Math.max(0,Number(row?.amount)||0);
-      if(!["kas","air","sampah"].includes(category)||amount<=0)continue;
-      const type=String(row?.type||"").toLowerCase();
-      const description=String(row?.description||"").slice(0,120);
-      const depositApplication=/deposit/i.test(description)||type==="deposit_application"||type==="automatic_deposit_application";
-      if(type==="expense"||type==="pengeluaran"){
-        expenseItems[id]={date:row.date||null,category,amount,description:description||"Pengeluaran"};expenses+=amount;
-      }else if((type==="payment"||type==="income"||type==="pemasukan")&&!depositApplication){
-        incomeItems[id]={date:row.date||null,category,amount,description:description||"Penerimaan pembayaran warga"};income+=amount;
-      }
-    }
-    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),income,expenses,incomeItems,expenseItems};
+  const transactionSummary=buildPublicCashFlowSummary(transactionsByMonth||{});
+  const transactionPeriods=new Set(Object.keys(transactionSummary));
+  for(const [period,summary] of Object.entries(transactionSummary)){
+    publicFinanceSummary[period]={...(publicFinanceSummary[period]||{}),...summary};
   }
   // Fallback only for legacy periods without unified transaction records.
   for(const [period,records] of Object.entries(paymentsByMonth||{})){
