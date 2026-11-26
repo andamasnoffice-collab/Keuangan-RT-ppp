@@ -848,22 +848,36 @@ function buildPublicFinanceProjection({financeSummary={},paymentsByMonth={},expe
       const item={id,date:row.date||null,category:cat,amount,description:String(row.description||("Pengeluaran "+labels[cat])).slice(0,120)};
       byCategory[cat].expenseItems.push(item);byCategory[cat].expenses+=amount;
     }
-    // Compatibility fallback for old records that predate paymentsByMonth/expensesByMonth.
-    if(!paymentRows.length){
-      for(const [id,row] of Object.entries(transactionsByMonth?.[period]||{})){
-        const cat=row?.category,amount=n(row?.amount),type=String(row?.type||"").toLowerCase(),desc=String(row?.description||"");
-        if(!byCategory[cat]||!amount||!/^(payment|income|pemasukan)$/.test(type)||/deposit/i.test(desc))continue;
-        byCategory[cat].incomeItems.push({id,date:row.date||null,category:cat,amount,description:desc.slice(0,120)||("Pembayaran warga · "+labels[cat])});
-        byCategory[cat].income+=amount;
-      }
+    // Merge legacy transaction rows that are not represented by a payment/expense record.
+    // A month may contain automatic deposit rows in paymentsByMonth and cash payments only in transactionsByMonth.
+    const transactionRows=Object.entries(transactionsByMonth?.[period]||{});
+    const knownPaymentRefs=new Set(paymentRows.flatMap(([id,row])=>[id,row?.id].filter(Boolean).map(String)));
+    const unmatchedPayments=transactionRows.filter(([id,row])=>{
+      const type=String(row?.type||"").toLowerCase(),desc=String(row?.description||"");
+      return /^(payment|income|pemasukan)$/.test(type)&&!(/deposit/i.test(desc))&&
+        !(row?.referenceId&&knownPaymentRefs.has(String(row.referenceId)));
+    });
+    // Prefer the explicit cash-receipt row for Air; its companion allocation row may include deposit funds.
+    const airCashRefs=new Set(unmatchedPayments.filter(([,row])=>row?.category==="air"&&/penerimaan kas air/i.test(String(row?.description||""))).map(([id,row])=>String(row.referenceId||id)));
+    const fallbackGroups=new Map();
+    for(const [id,row] of unmatchedPayments){
+      const cat=row?.category,amount=n(row?.amount),desc=String(row?.description||"");
+      if(!byCategory[cat]||!amount)continue;
+      if(cat==="air"&&airCashRefs.size&&!/penerimaan kas air/i.test(desc)&&airCashRefs.has(String(row.referenceId||id)))continue;
+      const key=String(row.referenceId||id)+"|"+cat;
+      if(!fallbackGroups.has(key))fallbackGroups.set(key,{id,date:row.date||null,category:cat,amount,description:desc.slice(0,120)||("Pembayaran warga · "+labels[cat])});
     }
-    if(!expenseRows.length){
-      for(const [id,row] of Object.entries(transactionsByMonth?.[period]||{})){
-        const cat=row?.category,amount=n(row?.amount),type=String(row?.type||"").toLowerCase();
-        if(!byCategory[cat]||!amount||!["expense","pengeluaran"].includes(type))continue;
-        const item={id,date:row.date||null,category:cat,amount,description:String(row.description||("Pengeluaran "+labels[cat])).slice(0,120)};
-        byCategory[cat].expenseItems.push(item);byCategory[cat].expenses+=amount;
-      }
+    for(const item of fallbackGroups.values()){
+      byCategory[item.category].incomeItems.push(item);
+      byCategory[item.category].income+=item.amount;
+    }
+    const knownExpenseRefs=new Set(expenseRows.flatMap(([id,row])=>[id,row?.id].filter(Boolean).map(String)));
+    for(const [id,row] of transactionRows){
+      const type=String(row?.type||"").toLowerCase(),cat=row?.category,amount=n(row?.amount);
+      if(!["expense","pengeluaran"].includes(type)||!byCategory[cat]||!amount||
+        (row?.referenceId&&knownExpenseRefs.has(String(row.referenceId))))continue;
+      const item={id,date:row.date||null,category:cat,amount,description:String(row.description||("Pengeluaran "+labels[cat])).slice(0,120)};
+      byCategory[cat].expenseItems.push(item);byCategory[cat].expenses+=amount;
     }
     for(const cat of ["kas","air","sampah"]){
       byCategory[cat].incomeItems.sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
