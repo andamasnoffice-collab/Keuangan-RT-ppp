@@ -629,6 +629,54 @@ async function calculateFinancialPosition({balances=null,deposits=null,advances=
 }
 export async function getFinancialPosition(){return calculateFinancialPosition();}
 
+export async function deleteExpense({period,expenseId,recordedBy}) {
+  if(!db)throw new Error("Firebase belum dikonfigurasi.");
+  if(!validPeriod(period)||!expenseId||String(expenseId).includes("/"))throw new Error("Transaksi pengeluaran tidak valid.");
+  const [record,allTransactions,balances,journals]=await Promise.all([
+    read(`expensesByMonth/${period}/${expenseId}`),
+    read(`transactionsByMonth/${period}`),
+    read("category_balances"),
+    read("journal_entries")
+  ]);
+  if(!record)throw new Error("Transaksi sudah tidak ditemukan. Muat ulang riwayat.");
+  const category=record.category,amount=Number(record.amount)||0;
+  if(!["kas","air","sampah"].includes(category)||amount<=0)throw new Error("Data transaksi tidak valid; penghapusan dibatalkan.");
+  const balance=balances?.[category]||{};
+  const current=Number(balance.balance)||0;
+  const expenseTotal=Number(balance.expense)||0;
+  if(expenseTotal<amount)throw new Error("Saldo akumulasi pengeluaran tidak cocok. Transaksi tidak dihapus agar pembukuan tidak rusak.");
+  const matchingTransactions=Object.entries(allTransactions||{}).filter(([id,row])=>
+    row?.type==="expense"&&(row?.referenceId===expenseId||id===expenseId)
+  );
+  const updates={
+    [`expensesByMonth/${period}/${expenseId}`]:null,
+    [`category_balances/${category}`]:{...balance,balance:current+amount,expense:expenseTotal-amount,updatedAt:Date.now()}
+  };
+  for(const [id] of matchingTransactions)updates[`transactionsByMonth/${period}/${id}`]=null;
+  const journalId="expense_"+expenseId;
+  if(journals?.[journalId])updates[`journal_entries/${journalId}`]=null;
+  const log=push(root("audit_logs"));
+  updates[`audit_logs/${log.key}`]={type:"expense_deleted",expenseId,period,category,amount,description:String(record.description||""),recordedBy:recordedBy||null,createdAt:Date.now()};
+  await writeAndVerify(updates,[`category_balances/${category}`]);
+  const summaryRef=root(`financeSummaryByMonth/${period}`);
+  const result=await runTransaction(summaryRef,currentSummary=>{
+    if(!currentSummary)return currentSummary;
+    const summary=currentSummary;
+    const item=summary.expenseItems?.[expenseId];
+    if(item){
+      summary.expenses=Math.max(0,(Number(summary.expenses)||0)-amount);
+      if(summary.byCategory?.[category])summary.byCategory[category].expenses=Math.max(0,(Number(summary.byCategory[category].expenses)||0)-amount);
+      delete summary.expenseItems[expenseId];
+    }
+    if(summary.applied)delete summary.applied[expenseId];
+    summary.updatedAt=Date.now();
+    return summary;
+  },{applyLocally:false});
+  if(!result.committed)throw new Error("Transaksi dihapus, tetapi ringkasan bulanan belum tersinkron. Tekan Perbarui Publik; jangan hapus ulang.");
+  await refreshPublicSnapshotSafely();
+  return {period,expenseId,category,amount};
+}
+
 export async function createExpense({category, amount, date, description, proof, recordedBy}) {
   if (!db) throw new Error("Firebase belum dikonfigurasi.");
   if (!["kas","air","sampah"].includes(category)) throw new Error("Pilih sumber dana yang valid.");
