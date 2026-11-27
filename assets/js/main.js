@@ -1,7 +1,7 @@
 import { firebaseConfigured, db } from "./firebase.js";
 import { onValue, ref, set } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 import { login, logout, observeSession, reauthenticate } from "./auth.js";
-import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261127-expensefix1";
+import { getHouseholds, getMonthBills, getPayments, getExpenses, saveHousehold, setHouseholdArrearPeriod, read, getFinancialPosition, getPublicDashboard, getPublicBills, getBillingSettings, saveBillingSettings, createExpense, deleteExpense, createMonthlyBills, saveWaterReading, editWaterReading, getMonthTransactions, importWaterStatement, deleteMasterData, buildAnnualSummary, refreshPublicSnapshotSafely, syncHouseholdBillingHistory, waiveHouseholdBill } from "./data.js?v=20261127-expensefix1";
 import { renderPaymentPage } from "./payments.js?v=20261126-cashflow3";
 import { renderWhatsAppPage } from "./whatsapp.js?v=20261126-arrears1";
 import { renderOpeningMigration } from "./migration.js?v=20261126-arrears1";
@@ -811,7 +811,23 @@ async function renderExpenses(c){
   const drawHistory=async()=>{
     const period=$("#expensePeriod").value||current;
     const rows=Object.values(await getExpenses(period)||{}).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
-    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(categoryNames[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Belum ada pengeluaran pada bulan ini.</td></tr>'}</tbody></table>`;
+    $("#expenseHistory").innerHTML=`<table><thead><tr><th>Tanggal</th><th>Sumber dana</th><th>Keterangan</th><th>Bukti</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.date||"-")}</td><td>${escapeHtml(categoryNames[x.category]||x.category)}</td><td>${escapeHtml(x.description||"-")}</td><td>${escapeHtml(x.proof||"-")}</td><td class="amount">${money(x.amount)}</td><td><button type="button" class="btn danger btn-sm" data-delete-expense="${escapeHtml(x.id||"")}" ${x.id?"":"disabled"}>Hapus</button></td></tr>`).join("")||'<tr><td colspan="6" class="empty">Belum ada pengeluaran pada bulan ini.</td></tr>'}</tbody></table>`;
+    $("#expenseHistory").querySelectorAll("[data-delete-expense]").forEach(button=>button.addEventListener("click",async()=>{
+      const expenseId=button.dataset.deleteExpense;
+      if(!expenseId)return;
+      const row=rows.find(item=>String(item.id)===expenseId);
+      if(!row)return;
+      const message=`Hapus transaksi ini?\\n\\n${row.date||period} · ${categoryNames[row.category]||row.category}\\n${row.description||"Tanpa keterangan"}\\n${money(row.amount)}\\n\\nSaldo kategori akan dikembalikan dan catatan audit tetap disimpan.`;
+      if(!confirm(message))return;
+      button.disabled=true;button.textContent="Menghapus…";
+      try{
+        await deleteExpense({period,expenseId,recordedBy:currentUser?.uid});
+        const latest=await getFinancialPosition();for(const cat of ["kas","air","sampah"])position[cat]=latest[cat];
+        $("#expensePosition").innerHTML=moneyLine(categorySelect.value);
+        toast("Transaksi pengeluaran berhasil dihapus dan saldo dikembalikan.");
+        await drawHistory();
+      }catch(error){toast("Gagal menghapus transaksi: "+error.message);button.disabled=false;button.textContent="Hapus";}
+    }));
   };
   await drawHistory();
   $("#expensePeriod").addEventListener("change",drawHistory);
