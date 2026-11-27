@@ -816,7 +816,10 @@ async function renderExpenses(c){
   await drawHistory();
   $("#expensePeriod").addEventListener("change",drawHistory);
   $("#expenseForm").addEventListener("submit",async e=>{
-    e.preventDefault();const f=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type="submit"]');
+    e.preventDefault();
+    const form=e.currentTarget;
+    const f=new FormData(form),button=form.querySelector('button[type="submit"]');
+    const submittedDate=String(f.get("date")||"");
     button.disabled=true;button.textContent="Menyimpan…";
     try{
       position=await getFinancialPosition();
@@ -827,7 +830,7 @@ async function renderExpenses(c){
       }
       const saved=await createExpense({category:f.get("category"),amount:requestedAmount,date:f.get("date"),description:f.get("description"),proof:f.get("proof"),recordedBy:currentUser?.uid});
       toast(saved.summarySyncPending?"Pengeluaran tersimpan, tetapi ringkasan bulanan perlu diperiksa. Jangan catat ulang.":"Pengeluaran berhasil disimpan.");
-      e.currentTarget.reset();e.currentTarget.elements.date.value=new Date().toISOString().slice(0,10);$("#expensePeriod").value=String(f.get("date")).slice(0,7);
+      form.reset();form.elements.date.value=new Date().toISOString().slice(0,10);$("#expensePeriod").value=submittedDate.slice(0,7);
       const latest=await getFinancialPosition();for(const cat of ["kas","air","sampah"])position[cat]=latest[cat];
       $("#expensePosition").innerHTML=moneyLine(categorySelect.value);await drawHistory();
     }catch(err){toast("Gagal menyimpan pengeluaran: "+err.message);}
